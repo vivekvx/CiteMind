@@ -1,8 +1,11 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 
 class QueryRequest(BaseModel):
     query: str
+    document_ids: Optional[list[int]] = None
 
 
 class QueryCitation(BaseModel):

@@ -6,21 +6,41 @@ import { EvalCard, EvalScores } from "../components/EvalCard";
 import { QueryPanel } from "../components/QueryPanel";
 import { DocumentItem, UploadBox } from "../components/UploadBox";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 export default function Home() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
   const [answer, setAnswer] = useState<QueryAnswer | null>(null);
   const [query, setQuery] = useState("");
   const [evalScores, setEvalScores] = useState<EvalScores | null>(null);
   const [status, setStatus] = useState("");
 
-  async function loadDocuments() {
+  async function loadDocuments(preferredDocumentId?: number) {
     const response = await fetch(`${API_URL}/documents`);
     if (!response.ok) {
       throw new Error("Unable to load documents");
     }
-    setDocuments(await response.json());
+    const nextDocuments: DocumentItem[] = await response.json();
+    setDocuments(nextDocuments);
+    setSelectedDocumentId((currentDocumentId) => {
+      if (nextDocuments.length === 0) {
+        return null;
+      }
+      if (
+        preferredDocumentId &&
+        nextDocuments.some((document) => document.id === preferredDocumentId)
+      ) {
+        return preferredDocumentId;
+      }
+      if (
+        currentDocumentId &&
+        nextDocuments.some((document) => document.id === currentDocumentId)
+      ) {
+        return currentDocumentId;
+      }
+      return nextDocuments[0].id;
+    });
   }
 
   useEffect(() => {
@@ -39,7 +59,8 @@ export default function Home() {
       setStatus("Upload failed.");
       return;
     }
-    await loadDocuments();
+    const uploadedDocument = (await response.json()) as { id: number };
+    await loadDocuments(uploadedDocument.id);
     setStatus("Document uploaded.");
   }
 
@@ -50,7 +71,10 @@ export default function Home() {
     const response = await fetch(`${API_URL}/query`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: nextQuery }),
+      body: JSON.stringify({
+        query: nextQuery,
+        document_ids: selectedDocumentId ? [selectedDocumentId] : undefined,
+      }),
     });
     if (!response.ok) {
       setStatus("Query failed.");
@@ -100,7 +124,12 @@ export default function Home() {
         ) : null}
 
         <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-          <UploadBox documents={documents} onUpload={handleUpload} />
+          <UploadBox
+            documents={documents}
+            onSelectDocument={setSelectedDocumentId}
+            onUpload={handleUpload}
+            selectedDocumentId={selectedDocumentId}
+          />
 
           <section className="space-y-6">
             <QueryPanel onSubmit={handleQuery} />

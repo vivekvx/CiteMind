@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from math import sqrt
+from typing import Optional
 
 
 @dataclass
@@ -30,10 +31,21 @@ class InMemoryVectorStore:
                 )
             )
 
-    def search(self, embedding: list[float], top_k: int = 3) -> list[VectorRecord]:
+    def search(
+        self,
+        embedding: list[float],
+        top_k: int = 3,
+        document_ids: Optional[list[int]] = None,
+    ) -> list[VectorRecord]:
+        allowed_document_ids = set(document_ids or [])
+        records = [
+            record
+            for record in self.records
+            if not allowed_document_ids or record.document_id in allowed_document_ids
+        ]
         scored = [
             (self._similarity(embedding, record.embedding), record)
-            for record in self.records
+            for record in records
         ]
         scored.sort(key=lambda item: item[0], reverse=True)
         return [record for _, record in scored[:top_k]]
