@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,6 +8,11 @@ class Settings(BaseSettings):
     app_name: str = "CiteMind API"
     environment: str = "development"
     database_url: str = "sqlite:///./citemind.db"
+    openai_api_key: Optional[str] = None
+    openai_chat_model: str = "gpt-4o-mini"
+    openai_embedding_model: str = "text-embedding-3-small"
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_collection: str = "citemind_chunks"
 
     model_config = SettingsConfigDict(
         env_file=".env",

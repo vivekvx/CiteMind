@@ -31,6 +31,13 @@ class InMemoryVectorStore:
                 )
             )
 
+    def document_records(self, document_id: int) -> list[VectorRecord]:
+        return [
+            record
+            for record in self.records
+            if record.document_id == document_id
+        ]
+
     def search(
         self,
         embedding: list[float],

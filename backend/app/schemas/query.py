@@ -15,5 +15,12 @@ class QueryCitation(BaseModel):
 
 
 class QueryResponse(BaseModel):
+    query_id: int
     answer: str
     citations: list[QueryCitation]
+    retrieved_chunks: list[QueryCitation] = []
+    document_ids_used: list[int] = []
+    intent: str = "normal_qa"
+    requested_count: int = 10
+    used_llm: bool = False
+    retrieved_chunk_count: int = 0

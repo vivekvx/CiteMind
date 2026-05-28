@@ -7,12 +7,7 @@ from backend.app.db.database import get_db
 from backend.app.models.document import Document
 from backend.app.models.query_log import QueryLog
 from backend.app.schemas.query import QueryCitation, QueryRequest, QueryResponse
-from backend.app.services.answer_generator import (
-    extract_requested_count,
-    generate_answer,
-    is_summary_query,
-)
-from backend.app.services.retriever import retrieve, retrieve_summary_context
+from backend.app.agent.planner import run_research_agent
 
 
 router = APIRouter(prefix="/query", tags=["query"])
@@ -24,19 +19,13 @@ def query_documents(
     db: Session = Depends(get_db),
 ) -> QueryResponse:
     document_ids = request.document_ids or _latest_document_ids(db)
-    records = (
-        retrieve_summary_context(
-            request.query,
-            top_k=extract_requested_count(request.query) + 5,
-            document_ids=document_ids,
-        )
-        if is_summary_query(request.query)
-        else retrieve(request.query, document_ids=document_ids)
-    )
-    answer = generate_answer(request.query, records)
+    result = run_research_agent(request.query, document_ids or [])
+    records = result.state.retrieved_chunks
 
-    db.add(QueryLog(query=request.query, answer=answer))
+    query_log = QueryLog(query=request.query, answer=result.answer)
+    db.add(query_log)
     db.commit()
+    db.refresh(query_log)
 
     citations = [
         QueryCitation(
@@ -47,7 +36,17 @@ def query_documents(
         for record in records
     ]
 
-    return QueryResponse(answer=answer, citations=citations)
+    return QueryResponse(
+        query_id=query_log.id,
+        answer=result.answer,
+        citations=citations,
+        retrieved_chunks=citations,
+        document_ids_used=result.state.document_ids,
+        intent=result.state.intent.value,
+        requested_count=result.state.requested_count,
+        used_llm=result.state.used_llm,
+        retrieved_chunk_count=len(citations),
+    )
 
 
 def _latest_document_ids(db: Session) -> Optional[list[int]]:

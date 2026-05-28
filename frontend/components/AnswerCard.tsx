@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 export type QueryCitation = {
   document_id: number;
   chunk_index: number;
@@ -7,8 +9,13 @@ export type QueryCitation = {
 };
 
 export type QueryAnswer = {
+  query_id?: number;
   answer: string;
   citations: QueryCitation[];
+  retrieved_chunks?: QueryCitation[];
+  document_ids_used?: number[];
+  intent?: string;
+  requested_count?: number;
 };
 
 type AnswerCardProps = {
@@ -17,6 +24,10 @@ type AnswerCardProps = {
 };
 
 export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
+  const [showAllChunks, setShowAllChunks] = useState(false);
+  const retrievedChunks = answer?.retrieved_chunks ?? answer?.citations ?? [];
+  const visibleChunks = showAllChunks ? retrievedChunks : retrievedChunks.slice(0, 3);
+
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -33,9 +44,9 @@ export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
 
       {answer ? (
         <div className="mt-4 space-y-5">
-          <p className="rounded-md bg-slate-50 p-4 text-sm leading-6 text-slate-800">
+          <div className="whitespace-pre-wrap rounded-md bg-slate-50 p-4 text-sm leading-6 text-slate-800">
             {answer.answer}
-          </p>
+          </div>
 
           <div>
             <h3 className="text-sm font-semibold uppercase tracking-normal text-slate-500">
@@ -58,11 +69,22 @@ export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
           </div>
 
           <div>
-            <h3 className="text-sm font-semibold uppercase tracking-normal text-slate-500">
-              Retrieved chunks
-            </h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold uppercase tracking-normal text-slate-500">
+                Retrieved chunks
+              </h3>
+              {retrievedChunks.length > 3 ? (
+                <button
+                  className="text-sm font-medium text-blue-700"
+                  onClick={() => setShowAllChunks((current) => !current)}
+                  type="button"
+                >
+                  {showAllChunks ? "Show fewer" : "Show more"}
+                </button>
+              ) : null}
+            </div>
             <div className="mt-3 space-y-3">
-              {answer.citations.map((citation) => (
+              {visibleChunks.map((citation) => (
                 <blockquote
                   className="rounded-md border-l-4 border-blue-600 bg-blue-50 p-3 text-sm leading-6 text-slate-700"
                   key={`chunk-${citation.document_id}-${citation.chunk_index}`}

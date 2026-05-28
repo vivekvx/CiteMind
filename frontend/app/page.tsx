@@ -15,6 +15,8 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [evalScores, setEvalScores] = useState<EvalScores | null>(null);
   const [status, setStatus] = useState("");
+  const selectedDocument =
+    documents.find((document) => document.id === selectedDocumentId) ?? null;
 
   async function loadDocuments(preferredDocumentId?: number) {
     const response = await fetch(`${API_URL}/documents`);
@@ -65,6 +67,10 @@ export default function Home() {
   }
 
   async function handleQuery(nextQuery: string) {
+    if (!selectedDocumentId) {
+      setStatus("Select a document before asking.");
+      return;
+    }
     setQuery(nextQuery);
     setEvalScores(null);
     setStatus("Retrieving answer...");
@@ -132,7 +138,11 @@ export default function Home() {
           />
 
           <section className="space-y-6">
-            <QueryPanel onSubmit={handleQuery} />
+            <QueryPanel
+              activeDocumentTitle={selectedDocument?.title}
+              disabled={!selectedDocumentId}
+              onSubmit={handleQuery}
+            />
             <AnswerCard answer={answer} onRunEval={handleEval} />
             <EvalCard scores={evalScores} />
           </section>

@@ -6,6 +6,11 @@ import re
 import urllib.request
 
 from backend.app.schemas.eval import EvalRunRequest
+from backend.app.agent.intent import (
+    detect_query_intent,
+    extract_requested_count,
+    QueryIntent,
+)
 
 
 def evaluate(request: EvalRunRequest) -> dict[str, float]:
@@ -56,8 +61,18 @@ def _heuristic_scores(request: EvalRunRequest) -> dict[str, float]:
     context_tokens = _tokens(" ".join(request.contexts))
 
     faithfulness = _overlap(answer_tokens, context_tokens) if context_tokens else 0.0
-    answer_relevance = _overlap(query_tokens, answer_tokens)
+    answer_relevance = max(
+        _overlap(query_tokens, answer_tokens),
+        _structured_answer_relevance(request.query, request.answer),
+    )
     context_relevance = _overlap(query_tokens, context_tokens) if context_tokens else 0.0
+    if detect_query_intent(request.query) in {
+        QueryIntent.SUMMARY,
+        QueryIntent.IMPORTANT_POINTS,
+        QueryIntent.TOPICS,
+        QueryIntent.STUDY_NOTES,
+    }:
+        context_relevance = max(context_relevance, _overlap(answer_tokens, context_tokens))
     citation_coverage = _citation_coverage(request.answer, len(request.citations))
 
     return _clamp_scores(
@@ -81,10 +96,34 @@ def _overlap(left: set[str], right: set[str]) -> float:
 
 
 def _citation_coverage(answer: str, citation_count: int) -> float:
-    bracket_count = len(re.findall(r"\[[^\]]+\]", answer))
+    bracket_count = len(re.findall(r"\[Document\s+\d+,\s+chunk\s+\d+\]", answer))
+    numbered_lines = re.findall(r"^\d+\.\s+.+$", answer, re.MULTILINE)
+    if numbered_lines:
+        cited_numbered_lines = [
+            line
+            for line in numbered_lines
+            if re.search(r"\[Document\s+\d+,\s+chunk\s+\d+\]", line)
+        ]
+        return len(cited_numbered_lines) / len(numbered_lines)
     if citation_count == 0:
         return 0.0
     return min(1.0, bracket_count / citation_count)
+
+
+def _structured_answer_relevance(query: str, answer: str) -> float:
+    intent = detect_query_intent(query)
+    if intent in {QueryIntent.IMPORTANT_POINTS, QueryIntent.TOPICS}:
+        requested_count = extract_requested_count(query)
+        numbered_count = len(re.findall(r"^\d+\.\s+", answer, re.MULTILINE))
+        has_overview = "Overview:" in answer
+        has_takeaway = "Final Takeaway:" in answer
+        if numbered_count == requested_count and has_overview and has_takeaway:
+            return 0.9
+    if intent == QueryIntent.SUMMARY and "Overview:" in answer and "Final Takeaway:" in answer:
+        return 0.8
+    if intent == QueryIntent.STUDY_NOTES and "Study Notes:" in answer:
+        return 0.8
+    return 0.0
 
 
 def _extract_json(content: str) -> str:
