@@ -67,7 +67,7 @@ cd /Users/vivek/CiteMind
 ```
 
 This starts the backend on `http://localhost:8001` and the frontend on
-`http://localhost:3000`. Press `Ctrl+C` in the same terminal to stop both.
+`http://localhost:3001`. Press `Ctrl+C` in the same terminal to stop both.
 
 Manual run commands:
 

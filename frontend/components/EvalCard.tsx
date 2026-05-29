@@ -20,21 +20,24 @@ const labels: Array<[keyof EvalScores, string]> = [
 
 export function EvalCard({ scores }: EvalCardProps) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-semibold">Evaluation</h2>
+    <section className="rounded-lg border border-white/10 bg-zinc-950/70 p-5 shadow-2xl shadow-black/30 backdrop-blur">
+      <h2 className="text-lg font-semibold text-white">Evaluation</h2>
       {scores ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {labels.map(([key, label]) => (
-            <div className="rounded-md border border-slate-200 p-4" key={key}>
-              <p className="text-sm text-slate-500">{label}</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-950">
+            <div
+              className="rounded-md border border-white/10 bg-white/[0.035] p-4 shadow-lg shadow-black/20"
+              key={key}
+            >
+              <p className="text-sm text-zinc-500">{label}</p>
+              <p className="mt-2 text-2xl font-semibold text-white">
                 {scores[key].toFixed(2)}
               </p>
             </div>
           ))}
         </div>
       ) : (
-        <p className="mt-4 rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+        <p className="mt-4 rounded-md border border-dashed border-white/15 bg-white/[0.03] p-4 text-sm text-zinc-500">
           Run evaluation after receiving an answer.
         </p>
       )}

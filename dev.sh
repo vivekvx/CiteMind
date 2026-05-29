@@ -31,16 +31,16 @@ echo "Starting CiteMind backend: http://localhost:8001"
 ) &
 BACKEND_PID=$!
 
-echo "Starting CiteMind frontend: http://localhost:3000"
+echo "Starting CiteMind frontend: http://localhost:3001"
 (
   cd "$ROOT_DIR/frontend"
-  npm run dev -- --port 3000
+  npm run dev -- --port 3001
 ) &
 FRONTEND_PID=$!
 
 echo
 echo "CiteMind is starting."
-echo "Open: http://localhost:3000"
+echo "Open: http://localhost:3001"
 echo "Backend docs: http://localhost:8001/docs"
 echo "Press Ctrl+C to stop both servers."
 echo

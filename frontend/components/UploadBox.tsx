@@ -43,16 +43,16 @@ export function UploadBox({
   }
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-semibold">Upload document</h2>
+    <section className="rounded-lg border border-white/10 bg-zinc-950/70 p-5 shadow-2xl shadow-black/30 backdrop-blur">
+      <h2 className="text-lg font-semibold text-white">Upload document</h2>
       <div className="mt-4 flex flex-col gap-3">
         <input
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-200 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-black hover:border-white/20"
           type="file"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
         />
         <button
-          className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="rounded-md bg-white px-4 py-2 text-sm font-medium text-black shadow-lg shadow-black/30 hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
           disabled={!file || isUploading}
           onClick={submitUpload}
           type="button"
@@ -62,29 +62,29 @@ export function UploadBox({
       </div>
 
       <div className="mt-6">
-        <h3 className="text-sm font-semibold uppercase tracking-normal text-slate-500">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
           Uploaded documents
         </h3>
         {selectedDocument ? (
-          <p className="mt-2 text-sm text-slate-700">
+          <p className="mt-2 text-sm text-zinc-400">
             Active document:{" "}
-            <span className="font-medium text-slate-950">
+            <span className="font-medium text-white">
               {selectedDocument.title}
             </span>
           </p>
         ) : null}
         <div className="mt-3 space-y-3">
           {documents.length === 0 ? (
-            <p className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+            <p className="rounded-md border border-dashed border-white/15 bg-white/[0.03] p-4 text-sm text-zinc-500">
               No documents uploaded yet.
             </p>
           ) : (
             documents.map((document) => (
               <div
-                className={`w-full rounded-md border p-3 text-left ${
+                className={`w-full rounded-md border p-3 text-left shadow-lg shadow-black/20 ${
                   document.id === selectedDocumentId
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-slate-200 bg-white"
+                    ? "border-white/40 bg-white/[0.09]"
+                    : "border-white/10 bg-white/[0.035] hover:border-white/20 hover:bg-white/[0.055]"
                 }`}
                 key={document.id}
               >
@@ -93,17 +93,17 @@ export function UploadBox({
                   onClick={() => onSelectDocument(document.id)}
                   type="button"
                 >
-                  <h4 className="text-sm font-medium text-slate-900">
+                  <h4 className="text-sm font-medium text-zinc-100">
                     {document.title}
                   </h4>
                 </button>
                 {document.abstract ? (
-                  <p className="mt-2 line-clamp-3 text-sm text-slate-600">
+                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-zinc-500">
                     {document.abstract}
                   </p>
                 ) : null}
                 <button
-                  className="mt-3 text-sm font-medium text-red-700"
+                  className="mt-3 text-sm font-medium text-zinc-400 hover:text-white"
                   onClick={() => onDeleteDocument(document.id)}
                   type="button"
                 >

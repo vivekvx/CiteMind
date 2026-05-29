@@ -31,11 +31,11 @@ export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
   const visibleChunks = showAllChunks ? retrievedChunks : retrievedChunks.slice(0, 3);
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-lg border border-white/10 bg-zinc-950/70 p-5 shadow-2xl shadow-black/30 backdrop-blur">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-semibold">Answer</h2>
+        <h2 className="text-lg font-semibold text-white">Answer</h2>
         <button
-          className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="rounded-md border border-white/15 bg-white/[0.08] px-4 py-2 text-sm font-medium text-zinc-100 shadow-lg shadow-black/20 hover:border-white/30 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-zinc-900 disabled:text-zinc-600"
           disabled={!answer}
           onClick={onRunEval}
           type="button"
@@ -50,39 +50,39 @@ export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
             <span
               className={`rounded-md px-2 py-1 ${
                 answer.used_llm
-                  ? "bg-emerald-50 text-emerald-800"
-                  : "bg-amber-50 text-amber-800"
+                  ? "border border-white/20 bg-white text-black"
+                  : "border border-white/10 bg-white/[0.07] text-zinc-300"
               }`}
             >
               {answer.used_llm ? "LLM synthesis" : "Local fallback"}
             </span>
             {answer.intent ? (
-              <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700">
+              <span className="rounded-md border border-white/10 bg-white/[0.045] px-2 py-1 text-zinc-400">
                 Intent: {answer.intent.replaceAll("_", " ")}
               </span>
             ) : null}
             {typeof answer.retrieved_chunk_count === "number" ? (
-              <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700">
+              <span className="rounded-md border border-white/10 bg-white/[0.045] px-2 py-1 text-zinc-400">
                 Chunks: {answer.retrieved_chunk_count}
               </span>
             ) : null}
           </div>
 
-          <div className="whitespace-pre-wrap rounded-md bg-slate-50 p-4 text-sm leading-6 text-slate-800">
+          <div className="whitespace-pre-wrap rounded-md border border-white/10 bg-black/35 p-4 text-sm leading-6 text-zinc-200">
             {answer.answer}
           </div>
 
           <div>
-            <h3 className="text-sm font-semibold uppercase tracking-normal text-slate-500">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
               Citations
             </h3>
             <div className="mt-3 space-y-2">
               {answer.citations.length === 0 ? (
-                <p className="text-sm text-slate-500">No citations returned.</p>
+                <p className="text-sm text-zinc-500">No citations returned.</p>
               ) : (
                 answer.citations.map((citation) => (
                   <div
-                    className="rounded-md border border-slate-200 p-3 text-sm"
+                    className="rounded-md border border-white/10 bg-white/[0.035] p-3 text-sm text-zinc-300"
                     key={`${citation.document_id}-${citation.chunk_index}`}
                   >
                     Document {citation.document_id}, chunk {citation.chunk_index}
@@ -94,12 +94,12 @@ export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
 
           <div>
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold uppercase tracking-normal text-slate-500">
+              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
                 Retrieved chunks
               </h3>
               {retrievedChunks.length > 3 ? (
                 <button
-                  className="text-sm font-medium text-blue-700"
+                  className="text-sm font-medium text-zinc-400 hover:text-white"
                   onClick={() => setShowAllChunks((current) => !current)}
                   type="button"
                 >
@@ -110,7 +110,7 @@ export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
             <div className="mt-3 space-y-3">
               {visibleChunks.map((citation) => (
                 <blockquote
-                  className="rounded-md border-l-4 border-blue-600 bg-blue-50 p-3 text-sm leading-6 text-slate-700"
+                  className="rounded-md border border-white/10 border-l-white/40 bg-white/[0.035] p-3 text-sm leading-6 text-zinc-400"
                   key={`chunk-${citation.document_id}-${citation.chunk_index}`}
                 >
                   {citation.text}
@@ -120,7 +120,7 @@ export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
           </div>
         </div>
       ) : (
-        <p className="mt-4 rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+        <p className="mt-4 rounded-md border border-dashed border-white/15 bg-white/[0.03] p-4 text-sm text-zinc-500">
           Ask a question to see an answer, citations, and retrieved chunks.
         </p>
       )}

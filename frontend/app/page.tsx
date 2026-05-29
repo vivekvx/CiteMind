@@ -142,30 +142,42 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-8">
-        <header className="border-b border-slate-200 pb-6">
-          <h1 className="text-4xl font-semibold tracking-normal">CiteMind</h1>
-          <p className="mt-2 max-w-2xl text-base text-slate-600">
+    <main className="min-h-screen px-4 py-6 text-zinc-100 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <header className="rounded-lg border border-white/10 bg-white/[0.045] px-5 py-5 shadow-2xl shadow-black/30 backdrop-blur md:px-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                Document-aware research
+              </p>
+              <h1 className="mt-2 text-4xl font-semibold tracking-normal text-white">
+                CiteMind
+              </h1>
+            </div>
+            <div className="rounded-md border border-white/10 bg-black/30 px-3 py-2 text-xs text-zinc-400">
+              API: {API_URL.replace("http://", "")}
+            </div>
+          </div>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-400">
             Citation-first AI research assistant with RAG evaluation
           </p>
         </header>
 
         {status ? (
-          <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <div className="rounded-md border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-zinc-200 shadow-lg shadow-black/20">
             {status}
           </div>
         ) : null}
 
         {llmHealth && !llmHealth.ok ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            LLM synthesis is unavailable
-            {llmHealth.error ? `: ${llmHealth.error}` : ""}. CiteMind will use
-            local fallback answers until OpenAI API quota is available.
+          <div className="rounded-md border border-white/10 bg-zinc-950/80 px-4 py-3 text-sm text-zinc-300 shadow-lg shadow-black/25">
+            <span className="font-medium text-white">LLM synthesis unavailable</span>
+            {llmHealth.error ? `: ${llmHealth.error}` : ""}. CiteMind will use local
+            fallback answers until OpenAI API quota is available.
           </div>
         ) : null}
 
-        <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="grid gap-5 lg:grid-cols-[minmax(20rem,0.88fr)_minmax(0,1.12fr)]">
           <UploadBox
             documents={documents}
             onDeleteDocument={handleDeleteDocument}
