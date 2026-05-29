@@ -21,6 +21,11 @@ class InMemoryVectorStore:
         chunks: list[str],
         embeddings: list[list[float]],
     ) -> None:
+        self.records = [
+            record
+            for record in self.records
+            if record.document_id != document_id
+        ]
         for index, chunk in enumerate(chunks):
             self.records.append(
                 VectorRecord(
@@ -36,6 +41,13 @@ class InMemoryVectorStore:
             record
             for record in self.records
             if record.document_id == document_id
+        ]
+
+    def remove_document(self, document_id: int) -> None:
+        self.records = [
+            record
+            for record in self.records
+            if record.document_id != document_id
         ]
 
     def search(

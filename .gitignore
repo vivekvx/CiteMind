@@ -1,5 +1,7 @@
 .DS_Store
 .env
+frontend/.env.local
+citemind.db
 
 __pycache__/
 *.py[cod]

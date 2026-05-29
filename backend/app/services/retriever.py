@@ -13,12 +13,16 @@ NOISE_TERMS = (
     "contact us",
     "copyright",
     "disclaimer",
+    "errata",
     "isbn",
     "liability",
     "oreilly.com",
+    "permissions",
     "praise for",
     "publisher",
     "publisher address",
+    "registered trademarks",
+    "trademarks",
 )
 
 STOPWORDS = {
@@ -34,6 +38,7 @@ STOPWORDS = {
     "from",
     "give",
     "how",
+    "important",
     "in",
     "is",
     "it",
@@ -43,9 +48,12 @@ STOPWORDS = {
     "on",
     "or",
     "pdf",
+    "points",
+    "study",
     "the",
     "this",
     "to",
+    "topics",
     "what",
     "with",
 }

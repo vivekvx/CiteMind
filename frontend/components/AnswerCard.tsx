@@ -16,6 +16,8 @@ export type QueryAnswer = {
   document_ids_used?: number[];
   intent?: string;
   requested_count?: number;
+  used_llm?: boolean;
+  retrieved_chunk_count?: number;
 };
 
 type AnswerCardProps = {
@@ -44,6 +46,28 @@ export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
 
       {answer ? (
         <div className="mt-4 space-y-5">
+          <div className="flex flex-wrap gap-2 text-xs font-medium">
+            <span
+              className={`rounded-md px-2 py-1 ${
+                answer.used_llm
+                  ? "bg-emerald-50 text-emerald-800"
+                  : "bg-amber-50 text-amber-800"
+              }`}
+            >
+              {answer.used_llm ? "LLM synthesis" : "Local fallback"}
+            </span>
+            {answer.intent ? (
+              <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700">
+                Intent: {answer.intent.replaceAll("_", " ")}
+              </span>
+            ) : null}
+            {typeof answer.retrieved_chunk_count === "number" ? (
+              <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700">
+                Chunks: {answer.retrieved_chunk_count}
+              </span>
+            ) : null}
+          </div>
+
           <div className="whitespace-pre-wrap rounded-md bg-slate-50 p-4 text-sm leading-6 text-slate-800">
             {answer.answer}
           </div>

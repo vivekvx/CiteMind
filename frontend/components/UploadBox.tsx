@@ -14,6 +14,7 @@ export type DocumentItem = {
 type UploadBoxProps = {
   documents: DocumentItem[];
   selectedDocumentId: number | null;
+  onDeleteDocument: (documentId: number) => Promise<void>;
   onSelectDocument: (documentId: number) => void;
   onUpload: (file: File) => Promise<void>;
 };
@@ -21,6 +22,7 @@ type UploadBoxProps = {
 export function UploadBox({
   documents,
   selectedDocumentId,
+  onDeleteDocument,
   onSelectDocument,
   onUpload,
 }: UploadBoxProps) {
@@ -78,25 +80,36 @@ export function UploadBox({
             </p>
           ) : (
             documents.map((document) => (
-              <button
+              <div
                 className={`w-full rounded-md border p-3 text-left ${
                   document.id === selectedDocumentId
                     ? "border-blue-500 bg-blue-50"
                     : "border-slate-200 bg-white"
                 }`}
                 key={document.id}
-                onClick={() => onSelectDocument(document.id)}
-                type="button"
               >
-                <h4 className="text-sm font-medium text-slate-900">
-                  {document.title}
-                </h4>
+                <button
+                  className="w-full text-left"
+                  onClick={() => onSelectDocument(document.id)}
+                  type="button"
+                >
+                  <h4 className="text-sm font-medium text-slate-900">
+                    {document.title}
+                  </h4>
+                </button>
                 {document.abstract ? (
                   <p className="mt-2 line-clamp-3 text-sm text-slate-600">
                     {document.abstract}
                   </p>
                 ) : null}
-              </button>
+                <button
+                  className="mt-3 text-sm font-medium text-red-700"
+                  onClick={() => onDeleteDocument(document.id)}
+                  type="button"
+                >
+                  Delete
+                </button>
+              </div>
             ))
           )}
         </div>

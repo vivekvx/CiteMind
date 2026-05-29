@@ -1,5 +1,6 @@
 import json
 import re
+import urllib.error
 import urllib.request
 from typing import Optional, Tuple
 
@@ -51,7 +52,7 @@ def generate_answer_result(
 
     intent = intent or detect_query_intent(query)
     requested_count = requested_count or extract_requested_count(query)
-    llm_answer = _generate_llm_answer(query, records, intent, requested_count)
+    llm_answer, llm_error = _generate_llm_answer(query, records, intent, requested_count)
     if llm_answer:
         return llm_answer, True
 
@@ -59,24 +60,26 @@ def generate_answer_result(
         "LLM generation is not configured. Add OPENAI_API_KEY to .env to enable "
         "synthesized answers. Here is a limited extractive fallback:\n\n"
         if not get_settings().openai_api_key
-        else "LLM generation failed. Here is a limited extractive fallback:\n\n"
+        else f"LLM generation failed: {llm_error or 'UnknownError'}. Check backend logs.\n\n"
+        "Here is a limited extractive fallback:\n\n"
     )
+    fallback_records = records[: min(len(records), 5)]
 
     if intent == QueryIntent.SUMMARY:
-        return fallback_prefix + _generate_summary(records), False
+        return fallback_prefix + _generate_summary(fallback_records), False
     if intent in {QueryIntent.IMPORTANT_POINTS, QueryIntent.TOPICS}:
-        return fallback_prefix + _generate_topics(records, requested_count), False
+        return fallback_prefix + _generate_topics(fallback_records, min(requested_count, 5)), False
     if intent == QueryIntent.STUDY_NOTES:
-        return fallback_prefix + _generate_study_notes(records, requested_count), False
+        return fallback_prefix + _generate_study_notes(fallback_records, min(requested_count, 5)), False
     if intent == QueryIntent.FLASHCARDS:
-        return fallback_prefix + _generate_flashcards(records, requested_count), False
+        return fallback_prefix + _generate_flashcards(fallback_records, min(requested_count, 5)), False
     if intent == QueryIntent.COMPARISON:
-        return fallback_prefix + _generate_comparison(query, records), False
+        return fallback_prefix + _generate_comparison(query, fallback_records), False
     if intent == QueryIntent.DEFINITION:
-        return fallback_prefix + _generate_definition(records), False
+        return fallback_prefix + _generate_definition(fallback_records), False
     if intent == QueryIntent.EXPLANATION:
-        return fallback_prefix + _generate_explanation(records), False
-    return fallback_prefix + _generate_direct_answer(records), False
+        return fallback_prefix + _generate_explanation(fallback_records), False
+    return fallback_prefix + _generate_direct_answer(fallback_records), False
 
 
 def _generate_llm_answer(
@@ -84,10 +87,10 @@ def _generate_llm_answer(
     records: list[VectorRecord],
     intent: QueryIntent,
     requested_count: int,
-) -> Optional[str]:
+) -> Tuple[Optional[str], Optional[str]]:
     settings = get_settings()
     if not settings.openai_api_key:
-        return None
+        return None, None
 
     payload = {
         "model": settings.openai_chat_model,
@@ -119,9 +122,26 @@ def _generate_llm_answer(
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             body = json.loads(response.read().decode("utf-8"))
-        return body["choices"][0]["message"]["content"].strip()
-    except Exception:
-        return None
+        return body["choices"][0]["message"]["content"].strip(), None
+    except Exception as exc:
+        safe_error = _safe_llm_error(exc)
+        print(f"LLM generation failed: {type(exc).__name__}: {safe_error}")
+        return None, safe_error
+
+
+def _safe_llm_error(exc: Exception) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        body = exc.read().decode("utf-8", errors="ignore")
+        try:
+            error = json.loads(body).get("error", {})
+            code = error.get("code") or error.get("type") or "http_error"
+            message = error.get("message") or exc.reason
+            print(f"OpenAI error detail: HTTP {exc.code} {code}: {message}")
+            return f"{code} (HTTP {exc.code})"
+        except Exception:
+            print(f"OpenAI error detail: HTTP {exc.code}: {body[:500]}")
+            return f"HTTPError (HTTP {exc.code})"
+    return type(exc).__name__
 
 
 def _system_prompt(intent: QueryIntent, requested_count: int) -> str:

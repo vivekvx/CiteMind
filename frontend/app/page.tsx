@@ -8,12 +8,20 @@ import { DocumentItem, UploadBox } from "../components/UploadBox";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
+type LlmHealth = {
+  configured: boolean;
+  ok: boolean;
+  model: string;
+  error?: string;
+};
+
 export default function Home() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
   const [answer, setAnswer] = useState<QueryAnswer | null>(null);
   const [query, setQuery] = useState("");
   const [evalScores, setEvalScores] = useState<EvalScores | null>(null);
+  const [llmHealth, setLlmHealth] = useState<LlmHealth | null>(null);
   const [status, setStatus] = useState("");
   const selectedDocument =
     documents.find((document) => document.id === selectedDocumentId) ?? null;
@@ -47,6 +55,10 @@ export default function Home() {
 
   useEffect(() => {
     loadDocuments().catch(() => setStatus("Could not load documents."));
+    fetch(`${API_URL}/health/llm`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((health: LlmHealth | null) => setLlmHealth(health))
+      .catch(() => setLlmHealth(null));
   }, []);
 
   async function handleUpload(file: File) {
@@ -64,6 +76,22 @@ export default function Home() {
     const uploadedDocument = (await response.json()) as { id: number };
     await loadDocuments(uploadedDocument.id);
     setStatus("Document uploaded.");
+  }
+
+  async function handleDeleteDocument(documentId: number) {
+    const response = await fetch(`${API_URL}/documents/${documentId}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      setStatus("Could not delete document.");
+      return;
+    }
+    if (selectedDocumentId === documentId) {
+      setAnswer(null);
+      setEvalScores(null);
+    }
+    await loadDocuments();
+    setStatus("Document deleted.");
   }
 
   async function handleQuery(nextQuery: string) {
@@ -129,9 +157,18 @@ export default function Home() {
           </div>
         ) : null}
 
+        {llmHealth && !llmHealth.ok ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            LLM synthesis is unavailable
+            {llmHealth.error ? `: ${llmHealth.error}` : ""}. CiteMind will use
+            local fallback answers until OpenAI API quota is available.
+          </div>
+        ) : null}
+
         <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
           <UploadBox
             documents={documents}
+            onDeleteDocument={handleDeleteDocument}
             onSelectDocument={setSelectedDocumentId}
             onUpload={handleUpload}
             selectedDocumentId={selectedDocumentId}

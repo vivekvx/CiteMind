@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.app.db.database import init_db
 from backend.app.routes.documents import router as documents_router
 from backend.app.routes.evals import router as evals_router
 from backend.app.routes.health import router as health_router
@@ -8,6 +9,7 @@ from backend.app.routes.query import router as query_router
 
 
 def create_app() -> FastAPI:
+    init_db()
     app = FastAPI(title="CiteMind API", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,

@@ -15,6 +15,7 @@ class Document(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     source_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     abstract: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -31,4 +32,9 @@ class Document(Base):
     citations: Mapped[list["Citation"]] = relationship(
         back_populates="document",
         cascade="all, delete-orphan",
+    )
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="DocumentChunk.chunk_index",
     )
