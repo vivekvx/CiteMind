@@ -1,14 +1,18 @@
 import hashlib
 import json
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.app.db.database import get_db
+from backend.app.models.citation import Citation
 from backend.app.models.document import Document
 from backend.app.models.document_chunk import DocumentChunk
+from backend.app.models.eval_result import EvalResult
+from backend.app.models.query_log import QueryLog
 from backend.app.schemas.document import DocumentListItem, DocumentUploadResponse
 from backend.app.services.chunker import chunk_text
 from backend.app.services.document_loader import load_document_content
@@ -17,6 +21,7 @@ from backend.app.services.vector_store import vector_store
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+SAMPLE_DOCUMENT_PATH = Path(__file__).resolve().parents[3] / "sample_docs" / "sample_ai_report.md"
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
@@ -26,6 +31,31 @@ async def upload_document(
 ) -> DocumentUploadResponse:
     title = file.filename or "Untitled document"
     content = await file.read()
+    return _store_document_content(db, title, content)
+
+
+@router.post("/demo/reset", response_model=DocumentUploadResponse)
+def reset_demo_data(db: Session = Depends(get_db)) -> DocumentUploadResponse:
+    if not SAMPLE_DOCUMENT_PATH.exists():
+        raise HTTPException(status_code=500, detail="Sample document not found.")
+
+    for model in (EvalResult, QueryLog, Citation, DocumentChunk, Document):
+        db.execute(delete(model))
+    db.commit()
+    vector_store.records = []
+
+    return _store_document_content(
+        db,
+        SAMPLE_DOCUMENT_PATH.name,
+        SAMPLE_DOCUMENT_PATH.read_bytes(),
+    )
+
+
+def _store_document_content(
+    db: Session,
+    title: str,
+    content: bytes,
+) -> DocumentUploadResponse:
     content_hash = hashlib.sha256(content).hexdigest()
 
     existing_document = db.scalar(

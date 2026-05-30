@@ -27,7 +27,7 @@ The backend defaults to SQLite and an in-memory vector store hydrated from persi
 
 - Frontend: Next.js single-page UI for upload, document selection, Q&A, citations, and evaluation score cards.
 - Backend: FastAPI API service with document, query, evaluation, and health routes.
-- Database: SQLite by default for local development; Docker Compose also provisions PostgreSQL for containerized runs.
+- Database: SQLite by default for local and Docker Compose runs.
 - Retrieval: In-memory vector store hydrated from SQLite chunks and stored deterministic embeddings in the current MVP phase.
 - Answering: Intent-aware research agent with optional OpenAI synthesis and local extractive fallback.
 - Evaluation: OpenAI judge prompts when configured, local heuristics otherwise.
@@ -37,7 +37,6 @@ The backend defaults to SQLite and an in-memory vector store hydrated from persi
 - FastAPI
 - SQLAlchemy
 - SQLite
-- PostgreSQL via Docker Compose
 - Next.js
 - TypeScript
 - Tailwind CSS
@@ -81,6 +80,16 @@ cd /Users/vivek/CiteMind/frontend
 npm run dev
 ```
 
+Docker Compose uses the same local MVP ports and SQLite-backed persistence:
+
+```bash
+cd /Users/vivek/CiteMind
+docker compose up --build
+```
+
+Open the app at `http://localhost:3001`; backend docs are available at
+`http://localhost:8001/docs`.
+
 ## Env Vars
 
 Copy `.env.example` to `.env` and fill values as needed.
@@ -108,6 +117,7 @@ Do not commit real `.env` files or API keys.
 - `GET /health`
 - `GET /health/llm`
 - `POST /documents/upload`
+- `POST /documents/demo/reset`
 - `GET /documents`
 - `DELETE /documents/{document_id}`
 - `POST /query`
@@ -187,7 +197,7 @@ npm run build
 - Implemented document upload, chunking, deterministic local retrieval, citation display, query logging, and RAG evaluation.
 - Added an intent-aware research agent for summaries, topics, study notes, flashcards, definitions, comparisons, and Q&A.
 - Added local heuristic evaluation fallback with optional OpenAI answer generation and judge-based scoring.
-- Containerized frontend, backend, database, and vector store with Docker Compose.
+- Containerized the frontend and backend with Docker Compose for local demos.
 
 ## Future Improvements
 

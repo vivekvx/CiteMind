@@ -15,6 +15,7 @@ type UploadBoxProps = {
   documents: DocumentItem[];
   selectedDocumentId: number | null;
   onDeleteDocument: (documentId: number) => Promise<void>;
+  onResetDemo: () => Promise<void>;
   onSelectDocument: (documentId: number) => void;
   onUpload: (file: File) => Promise<void>;
 };
@@ -23,11 +24,13 @@ export function UploadBox({
   documents,
   selectedDocumentId,
   onDeleteDocument,
+  onResetDemo,
   onSelectDocument,
   onUpload,
 }: UploadBoxProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const selectedDocument = documents.find(
     (document) => document.id === selectedDocumentId,
   );
@@ -40,6 +43,16 @@ export function UploadBox({
     await onUpload(file);
     setFile(null);
     setIsUploading(false);
+  }
+
+  async function resetDemo() {
+    setIsResetting(true);
+    try {
+      await onResetDemo();
+      setFile(null);
+    } finally {
+      setIsResetting(false);
+    }
   }
 
   return (
@@ -58,6 +71,14 @@ export function UploadBox({
           type="button"
         >
           {isUploading ? "Uploading..." : "Upload"}
+        </button>
+        <button
+          className="rounded-md border border-white/10 bg-black/30 px-4 py-2 text-sm font-medium text-zinc-300 hover:border-white/25 hover:text-white disabled:cursor-not-allowed disabled:border-white/5 disabled:text-zinc-600"
+          disabled={isResetting}
+          onClick={resetDemo}
+          type="button"
+        >
+          {isResetting ? "Resetting demo..." : "Reset demo sample"}
         </button>
       </div>
 

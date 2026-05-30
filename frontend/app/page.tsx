@@ -94,6 +94,23 @@ export default function Home() {
     setStatus("Document deleted.");
   }
 
+  async function handleResetDemo() {
+    setStatus("Resetting demo data...");
+    const response = await fetch(`${API_URL}/documents/demo/reset`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      setStatus("Could not reset demo data.");
+      return;
+    }
+    const demoDocument = (await response.json()) as { id: number };
+    setAnswer(null);
+    setEvalScores(null);
+    setQuery("");
+    await loadDocuments(demoDocument.id);
+    setStatus("Demo reset with sample_ai_report.md.");
+  }
+
   async function handleQuery(nextQuery: string) {
     if (!selectedDocumentId) {
       setStatus("Select a document before asking.");
@@ -181,6 +198,7 @@ export default function Home() {
           <UploadBox
             documents={documents}
             onDeleteDocument={handleDeleteDocument}
+            onResetDemo={handleResetDemo}
             onSelectDocument={setSelectedDocumentId}
             onUpload={handleUpload}
             selectedDocumentId={selectedDocumentId}

@@ -21,7 +21,7 @@ from backend.app.models.document import Document
 from backend.app.models.document_chunk import DocumentChunk
 from backend.app.models.eval_result import EvalResult
 from backend.app.models.query_log import QueryLog
-from backend.app.routes.documents import delete_document, upload_document
+from backend.app.routes.documents import delete_document, reset_demo_data, upload_document
 from backend.app.routes.query import query_documents
 from backend.app.schemas.eval import EvalRunRequest
 from backend.app.schemas.query import QueryRequest
@@ -148,6 +148,70 @@ class CiteMindRegressionTests(unittest.TestCase):
         self.assertEqual(document_count, 0)
         self.assertEqual(chunk_count, 0)
         self.assertEqual(vector_store.document_records(first.id), [])
+
+    def test_demo_reset_clears_persisted_data_and_loads_sample_document(self) -> None:
+        with SessionLocal() as db:
+            stale_document = Document(
+                title="stale.md",
+                abstract="Old demo data",
+                content_hash="stale-hash",
+            )
+            db.add(stale_document)
+            db.commit()
+            db.refresh(stale_document)
+            db.add(
+                DocumentChunk(
+                    document_id=stale_document.id,
+                    chunk_index=0,
+                    text="Old persisted chunk.",
+                    embedding_json="[1.0, 0.0]",
+                )
+            )
+            db.add(Citation(document_id=stale_document.id, quote="Old quote."))
+            db.add(QueryLog(query="old query", answer="old answer"))
+            db.add(
+                EvalResult(
+                    query="old query",
+                    answer="old answer",
+                    faithfulness_score=0.1,
+                    answer_relevance_score=0.1,
+                    context_relevance_score=0.1,
+                    citation_coverage_score=0.1,
+                )
+            )
+            db.commit()
+            vector_store.add_document(
+                stale_document.id,
+                ["Old persisted chunk."],
+                [[1.0, 0.0]],
+            )
+
+            response = reset_demo_data(db)
+
+        with SessionLocal() as db:
+            documents = list(db.scalars(select(Document)))
+            chunks = list(db.scalars(select(DocumentChunk)))
+            query_count = db.scalar(select(func.count()).select_from(QueryLog))
+            eval_count = db.scalar(select(func.count()).select_from(EvalResult))
+            citation_count = db.scalar(select(func.count()).select_from(Citation))
+
+        self.assertEqual(response.title, "sample_ai_report.md")
+        self.assertEqual(len(documents), 1)
+        self.assertEqual(documents[0].id, response.id)
+        self.assertEqual(documents[0].title, "sample_ai_report.md")
+        self.assertGreater(len(chunks), 0)
+        self.assertTrue(all(chunk.document_id == response.id for chunk in chunks))
+        self.assertTrue(all(chunk.embedding_json for chunk in chunks))
+        self.assertEqual(query_count, 0)
+        self.assertEqual(eval_count, 0)
+        self.assertEqual(citation_count, 0)
+        self.assertTrue(
+            all(record.text != "Old persisted chunk." for record in vector_store.records)
+        )
+        self.assertEqual(
+            len(vector_store.document_records(response.id)),
+            len(chunks),
+        )
 
     def test_epub_raw_package_bytes_are_rejected(self) -> None:
         with self.assertRaises(HTTPException):
