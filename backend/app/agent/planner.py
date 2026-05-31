@@ -1,6 +1,11 @@
 from dataclasses import dataclass
 
-from backend.app.agent.intent import QueryIntent, detect_query_intent, extract_requested_count
+from backend.app.agent.intent import (
+    QueryIntent,
+    detect_query_intent,
+    extract_requested_count,
+    extract_word_limit,
+)
 from backend.app.agent.skills import (
     run_comparison_skill,
     run_definition_skill,
@@ -27,6 +32,7 @@ def run_research_agent(question: str, document_ids: list[int]) -> AgentResult:
         active_document_id=document_ids[0] if document_ids else None,
         intent=intent,
         requested_count=extract_requested_count(question),
+        word_limit=extract_word_limit(question),
     )
     answer = _run_skill(state)
     return AgentResult(answer=answer, state=state)

@@ -1,5 +1,6 @@
 import re
 from enum import Enum
+from typing import Optional
 
 
 class QueryIntent(str, Enum):
@@ -83,5 +84,22 @@ def extract_requested_count(question: str, default: int = 10) -> int:
     return _clamp_count(default)
 
 
+def extract_word_limit(question: str) -> Optional[int]:
+    normalized = question.lower()
+    patterns = (
+        r"\b(?:in|under|within|around|about|approximately|approx\.?)\s+(\d{1,4})\s+words?\b",
+        r"\b(\d{1,4})\s+words?\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, normalized)
+        if match:
+            return _clamp_word_limit(int(match.group(1)))
+    return None
+
+
 def _clamp_count(count: int) -> int:
     return max(3, min(20, count))
+
+
+def _clamp_word_limit(count: int) -> int:
+    return max(30, min(1000, count))

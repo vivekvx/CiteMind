@@ -4,7 +4,7 @@ import urllib.request
 
 from fastapi import APIRouter
 
-from backend.app.core.config import get_settings
+from backend.app.services.llm_provider import get_llm_provider
 
 
 router = APIRouter(tags=["health"])
@@ -17,26 +17,26 @@ def health_check() -> dict[str, str]:
 
 @router.get("/health/llm")
 def llm_health_check() -> dict[str, object]:
-    settings = get_settings()
-    if not settings.openai_api_key:
+    provider = get_llm_provider()
+    if not provider.configured:
         return {
             "configured": False,
             "ok": False,
-            "model": settings.openai_chat_model,
-            "error": "missing_openai_api_key",
+            "model": provider.chat_model,
+            "error": "missing_llm_api_key",
         }
 
     payload = {
-        "model": settings.openai_chat_model,
+        "model": provider.chat_model,
         "messages": [{"role": "user", "content": "Reply with OK only."}],
         "temperature": 0,
         "max_tokens": 5,
     }
     request = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
+        provider.chat_completions_url,
         data=json.dumps(payload).encode("utf-8"),
         headers={
-            "Authorization": f"Bearer {settings.openai_api_key}",
+            "Authorization": f"Bearer {provider.api_key}",
             "Content-Type": "application/json",
         },
         method="POST",
@@ -47,21 +47,21 @@ def llm_health_check() -> dict[str, object]:
         return {
             "configured": True,
             "ok": True,
-            "model": settings.openai_chat_model,
+            "model": provider.chat_model,
             "sample": body["choices"][0]["message"]["content"],
         }
     except Exception as exc:
-        error = _safe_openai_error(exc)
+        error = _safe_llm_error(exc)
         print(f"LLM health check failed: {type(exc).__name__}: {error}")
         return {
             "configured": True,
             "ok": False,
-            "model": settings.openai_chat_model,
+            "model": provider.chat_model,
             "error": error,
         }
 
 
-def _safe_openai_error(exc: Exception) -> str:
+def _safe_llm_error(exc: Exception) -> str:
     if isinstance(exc, urllib.error.HTTPError):
         body = exc.read().decode("utf-8", errors="ignore")
         try:

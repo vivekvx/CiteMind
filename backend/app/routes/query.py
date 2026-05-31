@@ -45,6 +45,7 @@ def query_documents(
                 page_index_records,
                 result.state.intent,
                 result.state.requested_count,
+                result.state.word_limit,
             )
             result.answer = answer
             result.state.retrieved_chunks = page_index_records
@@ -74,6 +75,7 @@ def query_documents(
         document_ids_used=result.state.document_ids,
         intent=result.state.intent.value,
         requested_count=result.state.requested_count,
+        word_limit=result.state.word_limit,
         used_llm=result.state.used_llm,
         retrieved_chunk_count=len(citations),
         retrieval_strategy=retrieval_strategy,

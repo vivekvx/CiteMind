@@ -8,8 +8,9 @@ from backend.app.agent.intent import (
     QueryIntent,
     detect_query_intent,
     extract_requested_count,
+    extract_word_limit,
 )
-from backend.app.core.config import get_settings
+from backend.app.services.llm_provider import get_llm_provider
 from backend.app.services.vector_store import VectorRecord
 
 
@@ -36,8 +37,9 @@ def generate_answer(
     records: list[VectorRecord],
     intent: Optional[QueryIntent] = None,
     requested_count: Optional[int] = None,
+    word_limit: Optional[int] = None,
 ) -> str:
-    answer, _ = generate_answer_result(query, records, intent, requested_count)
+    answer, _ = generate_answer_result(query, records, intent, requested_count, word_limit)
     return answer
 
 
@@ -46,20 +48,22 @@ def generate_answer_result(
     records: list[VectorRecord],
     intent: Optional[QueryIntent] = None,
     requested_count: Optional[int] = None,
+    word_limit: Optional[int] = None,
 ) -> Tuple[str, bool]:
     if not records:
         return "No relevant context found.", False
 
     intent = intent or detect_query_intent(query)
     requested_count = requested_count or extract_requested_count(query)
-    llm_answer, llm_error = _generate_llm_answer(query, records, intent, requested_count)
+    word_limit = word_limit or extract_word_limit(query)
+    llm_answer, llm_error = _generate_llm_answer(query, records, intent, requested_count, word_limit)
     if llm_answer:
         return llm_answer, True
 
     fallback_prefix = (
-        "LLM generation is not configured. Add OPENAI_API_KEY to .env to enable "
+        "LLM generation is not configured. Add LLM_API_KEY or OPENAI_API_KEY to .env to enable "
         "synthesized answers. Here is a limited extractive fallback:\n\n"
-        if not get_settings().openai_api_key
+        if not get_llm_provider().configured
         else f"LLM generation failed: {llm_error or 'UnknownError'}. Check backend logs.\n\n"
         "Here is a limited extractive fallback:\n\n"
     )
@@ -87,23 +91,25 @@ def _generate_llm_answer(
     records: list[VectorRecord],
     intent: QueryIntent,
     requested_count: int,
+    word_limit: Optional[int],
 ) -> Tuple[Optional[str], Optional[str]]:
-    settings = get_settings()
-    if not settings.openai_api_key:
+    provider = get_llm_provider()
+    if not provider.configured:
         return None, None
 
     payload = {
-        "model": settings.openai_chat_model,
+        "model": provider.chat_model,
         "messages": [
             {
                 "role": "system",
-                "content": _system_prompt(intent, requested_count),
+                "content": _system_prompt(intent, requested_count, word_limit),
             },
             {
                 "role": "user",
                 "content": (
                     f"Question: {query}\n\n"
                     f"Requested count: {requested_count}\n\n"
+                    f"Word limit: {word_limit or 'none'}\n\n"
                     f"Retrieved context:\n{_format_context(records)}"
                 ),
             },
@@ -111,10 +117,10 @@ def _generate_llm_answer(
         "temperature": 0.2,
     }
     request = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
+        provider.chat_completions_url,
         data=json.dumps(payload).encode("utf-8"),
         headers={
-            "Authorization": f"Bearer {settings.openai_api_key}",
+            "Authorization": f"Bearer {provider.api_key}",
             "Content-Type": "application/json",
         },
         method="POST",
@@ -136,15 +142,15 @@ def _safe_llm_error(exc: Exception) -> str:
             error = json.loads(body).get("error", {})
             code = error.get("code") or error.get("type") or "http_error"
             message = error.get("message") or exc.reason
-            print(f"OpenAI error detail: HTTP {exc.code} {code}: {message}")
+            print(f"LLM provider error detail: HTTP {exc.code} {code}: {message}")
             return f"{code} (HTTP {exc.code})"
         except Exception:
-            print(f"OpenAI error detail: HTTP {exc.code}: {body[:500]}")
+            print(f"LLM provider error detail: HTTP {exc.code}: {body[:500]}")
             return f"HTTPError (HTTP {exc.code})"
     return type(exc).__name__
 
 
-def _system_prompt(intent: QueryIntent, requested_count: int) -> str:
+def _system_prompt(intent: QueryIntent, requested_count: int, word_limit: Optional[int] = None) -> str:
     base = (
         "You are CiteMind, a document-aware research assistant. Use only the "
         "retrieved context. Synthesize rather than copying chunks. Ignore noisy "
@@ -153,7 +159,18 @@ def _system_prompt(intent: QueryIntent, requested_count: int) -> str:
         "context needs an inline citation exactly like [Document X, chunk Y]. If "
         "context is insufficient, say what is missing and do not fabricate.\n\n"
     )
+    if word_limit:
+        base += (
+            f"The user requested a length limit. Keep the whole answer under {word_limit} words, "
+            "including headings and citations. Prefer one compact paragraph when a strict word "
+            "limit conflicts with a longer template.\n\n"
+        )
     if intent == QueryIntent.STUDY_NOTES:
+        if word_limit:
+            return base + (
+                "Output concise study notes with citations. Keep each note short and do not exceed "
+                f"{word_limit} total words."
+            )
         return base + (
             "Output exactly this format:\n"
             "Study Notes:\n"
@@ -164,6 +181,11 @@ def _system_prompt(intent: QueryIntent, requested_count: int) -> str:
             f"Create up to {requested_count} useful notes."
         )
     if intent in {QueryIntent.TOPICS, QueryIntent.IMPORTANT_POINTS}:
+        if word_limit:
+            return base + (
+                f"Output exactly {requested_count} short numbered topics with inline citations. "
+                f"Stay under {word_limit} total words."
+            )
         return base + (
             "Output exactly this format:\n"
             "Overview:\n<2-3 concise sentences>\n\n"
@@ -174,6 +196,11 @@ def _system_prompt(intent: QueryIntent, requested_count: int) -> str:
             f"Output exactly {requested_count} numbered topics."
         )
     if intent == QueryIntent.SUMMARY:
+        if word_limit:
+            return base + (
+                "Output a concise summary paragraph with inline citations. "
+                f"Stay under {word_limit} total words."
+            )
         return base + (
             "Output exactly this format:\n"
             "Overview:\n<clear summary>\n\n"

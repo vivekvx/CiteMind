@@ -16,6 +16,7 @@ export type QueryAnswer = {
   document_ids_used?: number[];
   intent?: string;
   requested_count?: number;
+  word_limit?: number | null;
   used_llm?: boolean;
   retrieved_chunk_count?: number;
   retrieval_strategy?: string;
@@ -61,6 +62,11 @@ export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
             {answer.intent ? (
               <span className="rounded-md border border-white/10 bg-white/[0.045] px-2 py-1 text-zinc-400">
                 Intent: {answer.intent.replaceAll("_", " ")}
+              </span>
+            ) : null}
+            {typeof answer.word_limit === "number" ? (
+              <span className="rounded-md border border-white/10 bg-white/[0.045] px-2 py-1 text-zinc-400">
+                Limit: {answer.word_limit} words
               </span>
             ) : null}
             {typeof answer.retrieved_chunk_count === "number" ? (

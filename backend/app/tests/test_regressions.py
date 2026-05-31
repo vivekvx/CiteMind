@@ -12,7 +12,12 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_TEMP_DIR.name}/citemind-test.db"
 
 from sqlalchemy import delete, func, inspect, select
 
-from backend.app.agent.intent import QueryIntent, detect_query_intent, extract_requested_count
+from backend.app.agent.intent import (
+    QueryIntent,
+    detect_query_intent,
+    extract_requested_count,
+    extract_word_limit,
+)
 from backend.app.core.config import get_settings
 from backend.app.db.database import SessionLocal, init_db
 from backend.app.db.database import engine
@@ -22,12 +27,14 @@ from backend.app.models.document_chunk import DocumentChunk
 from backend.app.models.eval_result import EvalResult
 from backend.app.models.query_log import QueryLog
 from backend.app.routes.documents import delete_document, reset_demo_data, upload_document
+from backend.app.routes.health import llm_health_check
 from backend.app.routes.query import query_documents
 from backend.app.schemas.eval import EvalRunRequest
 from backend.app.schemas.query import QueryRequest
 from backend.app.services.document_loader import load_document_content
 from backend.app.services.embeddings import embed_chunks
 from backend.app.services.evaluator import evaluate
+from backend.app.services.llm_provider import get_llm_provider
 from backend.app.services.retriever import (
     is_noisy_chunk,
     keyword_score,
@@ -43,6 +50,9 @@ class CiteMindRegressionTests(unittest.TestCase):
     def setUp(self) -> None:
         settings = get_settings()
         settings.openai_api_key = None
+        settings.llm_api_key = None
+        settings.llm_base_url = None
+        settings.llm_chat_model = None
         settings.retrieval_mode = "vector"
         settings.page_index_min_chunks = 8
         vector_store.records = []
@@ -60,6 +70,7 @@ class CiteMindRegressionTests(unittest.TestCase):
             extract_requested_count("give me exactly 10 important topics"),
             10,
         )
+        self.assertEqual(extract_word_limit("give me summary in 100 words"), 100)
         self.assertTrue(
             is_noisy_chunk(
                 "Copyright 2026. All rights reserved. ISBN 1234567890. "
@@ -85,6 +96,59 @@ class CiteMindRegressionTests(unittest.TestCase):
         self.assertIn("content_hash", document_columns)
         self.assertIn("page_index_tree_json", document_columns)
         self.assertIn("embedding_json", chunk_columns)
+
+    def test_generic_llm_provider_overrides_openai_defaults(self) -> None:
+        settings = get_settings()
+        settings.openai_api_key = "openai-key"
+        settings.openai_chat_model = "gpt-4o-mini"
+        settings.llm_api_key = "generic-key"
+        settings.llm_base_url = "https://api.deepseek.com"
+        settings.llm_chat_model = "deepseek-chat"
+
+        provider = get_llm_provider()
+
+        self.assertTrue(provider.configured)
+        self.assertEqual(provider.api_key, "generic-key")
+        self.assertEqual(provider.chat_model, "deepseek-chat")
+        self.assertEqual(
+            provider.chat_completions_url,
+            "https://api.deepseek.com/chat/completions",
+        )
+
+    def test_generic_llm_provider_normalizes_base_url_trailing_slash(self) -> None:
+        settings = get_settings()
+        settings.llm_api_key = "generic-key"
+        settings.llm_base_url = "https://openrouter.ai/api/v1/"
+        settings.llm_chat_model = "deepseek/deepseek-chat-v3.1:free"
+
+        provider = get_llm_provider()
+
+        self.assertEqual(
+            provider.chat_completions_url,
+            "https://openrouter.ai/api/v1/chat/completions",
+        )
+
+    def test_openai_settings_remain_default_llm_provider(self) -> None:
+        settings = get_settings()
+        settings.openai_api_key = "openai-key"
+        settings.openai_chat_model = "gpt-4o-mini"
+
+        provider = get_llm_provider()
+
+        self.assertTrue(provider.configured)
+        self.assertEqual(provider.api_key, "openai-key")
+        self.assertEqual(provider.chat_model, "gpt-4o-mini")
+        self.assertEqual(
+            provider.chat_completions_url,
+            "https://api.openai.com/v1/chat/completions",
+        )
+
+    def test_llm_health_reports_generic_missing_key(self) -> None:
+        response = llm_health_check()
+
+        self.assertFalse(response["configured"])
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"], "missing_llm_api_key")
 
     def test_summary_retrieval_stays_scoped_to_selected_document(self) -> None:
         original_records = list(vector_store.records)
@@ -278,6 +342,34 @@ class CiteMindRegressionTests(unittest.TestCase):
         self.assertTrue(
             all(chunk.document_id == first.id for chunk in response.retrieved_chunks)
         )
+
+    def test_summary_query_preserves_word_limit_and_uses_smaller_context(self) -> None:
+        content = (
+            b"Transformer models use attention layers for language modeling. "
+            b"Attention helps models connect distant words and concepts. "
+            b"Embeddings represent tokens as vectors for neural networks. "
+            b"Training updates model weights from large text datasets. "
+            b"Evaluation checks whether generated answers are useful and grounded. "
+        ) * 80
+
+        with SessionLocal() as db:
+            uploaded = run(
+                upload_document(
+                    UploadFile(filename="summary.md", file=BytesIO(content)),
+                    db,
+                )
+            )
+            response = query_documents(
+                QueryRequest(
+                    query="Give me summary in 100 words.",
+                    document_ids=[uploaded.id],
+                ),
+                db,
+            )
+
+        self.assertEqual(response.intent, QueryIntent.SUMMARY.value)
+        self.assertEqual(response.word_limit, 100)
+        self.assertLessEqual(response.retrieved_chunk_count, 6)
 
     def test_pageindex_tree_is_stored_for_long_opt_in_upload(self) -> None:
         settings = get_settings()

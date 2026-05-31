@@ -190,7 +190,7 @@ export default function Home() {
           <div className="rounded-md border border-white/10 bg-zinc-950/80 px-4 py-3 text-sm text-zinc-300 shadow-lg shadow-black/25">
             <span className="font-medium text-white">LLM synthesis unavailable</span>
             {llmHealth.error ? `: ${llmHealth.error}` : ""}. CiteMind will use local
-            fallback answers until OpenAI API quota is available.
+            fallback answers until a configured LLM provider is reachable.
           </div>
         ) : null}
 

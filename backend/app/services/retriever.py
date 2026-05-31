@@ -110,7 +110,7 @@ def retrieve_summary_context(
     requested_count: int = 10,
     intent: QueryIntent = QueryIntent.SUMMARY,
 ) -> list[VectorRecord]:
-    max_chunks = min(18, max(12, requested_count + 6))
+    max_chunks = _max_broad_context_chunks(intent, requested_count)
     semantic_records = retrieve(
         question,
         top_k=max(max_chunks * 2, 24),
@@ -161,6 +161,14 @@ def retrieve_summary_context(
             break
 
     return rerank_chunks(question, candidates, intent)[:max_chunks]
+
+
+def _max_broad_context_chunks(intent: QueryIntent, requested_count: int) -> int:
+    if intent in {QueryIntent.SUMMARY, QueryIntent.EXPLANATION}:
+        return 6
+    if intent in {QueryIntent.STUDY_NOTES, QueryIntent.FLASHCARDS}:
+        return min(10, max(5, requested_count + 1))
+    return min(12, max(5, requested_count + 2))
 
 
 def keyword_score(query: str, text: str) -> float:

@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     app_name: str = "CiteMind API"
     environment: str = "development"
     database_url: str = "sqlite:///./citemind.db"
+    llm_api_key: Optional[str] = None
+    llm_base_url: Optional[str] = None
+    llm_chat_model: Optional[str] = None
     openai_api_key: Optional[str] = None
     openai_chat_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"

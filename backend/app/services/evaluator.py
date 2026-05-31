@@ -6,16 +6,16 @@ import urllib.error
 import urllib.request
 
 from backend.app.schemas.eval import EvalRunRequest
-from backend.app.core.config import get_settings
 from backend.app.agent.intent import (
     detect_query_intent,
     extract_requested_count,
     QueryIntent,
 )
+from backend.app.services.llm_provider import get_llm_provider
 
 
 def evaluate(request: EvalRunRequest) -> dict[str, float]:
-    if get_settings().openai_api_key:
+    if get_llm_provider().configured:
         scores = _llm_scores(request)
         if scores:
             return scores
@@ -23,7 +23,7 @@ def evaluate(request: EvalRunRequest) -> dict[str, float]:
 
 
 def _llm_scores(request: EvalRunRequest) -> dict[str, float] | None:
-    settings = get_settings()
+    provider = get_llm_provider()
     prompt = (
         "Score this RAG answer from 0 to 1 as JSON with keys "
         "faithfulness_score, answer_relevance_score, context_relevance_score, "
@@ -34,15 +34,15 @@ def _llm_scores(request: EvalRunRequest) -> dict[str, float] | None:
         f"Citations: {request.citations}\n"
     )
     payload = {
-        "model": settings.openai_chat_model,
+        "model": provider.chat_model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
     }
     http_request = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
+        provider.chat_completions_url,
         data=json.dumps(payload).encode("utf-8"),
         headers={
-            "Authorization": f"Bearer {settings.openai_api_key}",
+            "Authorization": f"Bearer {provider.api_key}",
             "Content-Type": "application/json",
         },
         method="POST",

@@ -45,6 +45,7 @@ def _run_with_intent(state: ResearchAgentState, intent: QueryIntent) -> str:
         state.retrieved_chunks,
         state.intent,
         state.requested_count,
+        state.word_limit,
     )
     state.used_llm = used_llm
     return answer

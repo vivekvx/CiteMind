@@ -12,5 +12,6 @@ class ResearchAgentState:
     active_document_id: Optional[int]
     intent: QueryIntent
     requested_count: int
+    word_limit: Optional[int] = None
     retrieved_chunks: list[VectorRecord] = field(default_factory=list)
     used_llm: bool = False

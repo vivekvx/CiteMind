@@ -22,6 +22,7 @@ class QueryResponse(BaseModel):
     document_ids_used: list[int] = []
     intent: str = "normal_qa"
     requested_count: int = 10
+    word_limit: Optional[int] = None
     used_llm: bool = False
     retrieved_chunk_count: int = 0
     retrieval_strategy: str = "vector"
