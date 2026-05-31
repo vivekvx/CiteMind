@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
+from backend.app.core.rate_limit import enforce_rate_limit
 from backend.app.db.database import get_db
 from backend.app.models.citation import Citation
 from backend.app.models.document import Document
@@ -30,14 +31,20 @@ SAMPLE_DOCUMENT_PATH = Path(__file__).resolve().parents[3] / "sample_docs" / "sa
 async def upload_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    _: None = Depends(enforce_rate_limit),
 ) -> DocumentUploadResponse:
     title = file.filename or "Untitled document"
     content = await file.read()
+    if len(content) > get_settings().max_upload_bytes:
+        raise HTTPException(status_code=413, detail="Uploaded file is too large.")
     return _store_document_content(db, title, content)
 
 
 @router.post("/demo/reset", response_model=DocumentUploadResponse)
-def reset_demo_data(db: Session = Depends(get_db)) -> DocumentUploadResponse:
+def reset_demo_data(
+    db: Session = Depends(get_db),
+    _: None = Depends(enforce_rate_limit),
+) -> DocumentUploadResponse:
     if not SAMPLE_DOCUMENT_PATH.exists():
         raise HTTPException(status_code=500, detail="Sample document not found.")
 

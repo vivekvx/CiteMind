@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     qdrant_collection: str = "citemind_chunks"
     retrieval_mode: str = "vector"
     page_index_min_chunks: int = 8
+    max_upload_bytes: int = 10_000_000
+    rate_limit_enabled: bool = True
+    rate_limit_requests_per_minute: int = 20
 
     model_config = SettingsConfigDict(
         env_file=".env",

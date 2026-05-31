@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing import Optional
 
+from backend.app.core.rate_limit import enforce_rate_limit
 from backend.app.core.config import get_settings
 from backend.app.db.database import get_db
 from backend.app.models.document import Document
@@ -13,7 +14,7 @@ from backend.app.services.answer_generator import generate_answer_result
 from backend.app.services.page_index import retrieve_page_index_records
 
 
-router = APIRouter(prefix="/query", tags=["query"])
+router = APIRouter(prefix="/query", tags=["query"], dependencies=[Depends(enforce_rate_limit)])
 
 
 @router.post("", response_model=QueryResponse)

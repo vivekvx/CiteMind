@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.app.core.rate_limit import enforce_rate_limit
 from backend.app.db.database import get_db
 from backend.app.models.eval_result import EvalResult
 from backend.app.schemas.eval import EvalRunRequest, EvalRunResponse
 from backend.app.services.evaluator import evaluate
 
 
-router = APIRouter(prefix="/evals", tags=["evals"])
+router = APIRouter(prefix="/evals", tags=["evals"], dependencies=[Depends(enforce_rate_limit)])
 
 
 @router.post("/run", response_model=EvalRunResponse)

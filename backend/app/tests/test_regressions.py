@@ -26,6 +26,7 @@ from backend.app.models.document import Document
 from backend.app.models.document_chunk import DocumentChunk
 from backend.app.models.eval_result import EvalResult
 from backend.app.models.query_log import QueryLog
+from backend.app.core.rate_limit import rate_limiter
 from backend.app.routes.documents import delete_document, reset_demo_data, upload_document
 from backend.app.routes.health import llm_health_check
 from backend.app.routes.query import query_documents
@@ -55,6 +56,10 @@ class CiteMindRegressionTests(unittest.TestCase):
         settings.llm_chat_model = None
         settings.retrieval_mode = "vector"
         settings.page_index_min_chunks = 8
+        settings.max_upload_bytes = 10_000_000
+        settings.rate_limit_enabled = True
+        settings.rate_limit_requests_per_minute = 20
+        rate_limiter._requests.clear()
         vector_store.records = []
         with SessionLocal() as db:
             for model in (EvalResult, QueryLog, Citation, DocumentChunk, Document):
@@ -216,6 +221,30 @@ class CiteMindRegressionTests(unittest.TestCase):
         self.assertEqual(document_count, 0)
         self.assertEqual(chunk_count, 0)
         self.assertEqual(vector_store.document_records(first.id), [])
+
+    def test_upload_rejects_files_over_configured_size(self) -> None:
+        settings = get_settings()
+        settings.max_upload_bytes = 8
+
+        with SessionLocal() as db:
+            with self.assertRaises(HTTPException) as error:
+                run(
+                    upload_document(
+                        UploadFile(filename="large.md", file=BytesIO(b"too much content")),
+                        db,
+                    )
+                )
+
+        self.assertEqual(error.exception.status_code, 413)
+
+    def test_rate_limiter_blocks_after_configured_limit(self) -> None:
+        rate_limiter.check("client-a", limit=2, window_seconds=60)
+        rate_limiter.check("client-a", limit=2, window_seconds=60)
+
+        with self.assertRaises(HTTPException) as error:
+            rate_limiter.check("client-a", limit=2, window_seconds=60)
+
+        self.assertEqual(error.exception.status_code, 429)
 
     def test_demo_reset_clears_persisted_data_and_loads_sample_document(self) -> None:
         with SessionLocal() as db:
