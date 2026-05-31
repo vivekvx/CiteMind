@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     openai_embedding_model: str = "text-embedding-3-small"
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "citemind_chunks"
+    retrieval_mode: str = "vector"
+    page_index_min_chunks: int = 8
 
     model_config = SettingsConfigDict(
         env_file=".env",

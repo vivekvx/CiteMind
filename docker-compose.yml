@@ -10,6 +10,8 @@ services:
       OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
       QDRANT_URL: ${QDRANT_URL:-http://localhost:6333}
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-citemind_chunks}
+      RETRIEVAL_MODE: ${RETRIEVAL_MODE:-vector}
+      PAGE_INDEX_MIN_CHUNKS: ${PAGE_INDEX_MIN_CHUNKS:-8}
     ports:
       - "8001:8001"
     volumes:

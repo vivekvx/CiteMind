@@ -18,6 +18,8 @@ export type QueryAnswer = {
   requested_count?: number;
   used_llm?: boolean;
   retrieved_chunk_count?: number;
+  retrieval_strategy?: string;
+  retrieval_comparison?: Record<string, number>;
 };
 
 type AnswerCardProps = {
@@ -64,6 +66,19 @@ export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
             {typeof answer.retrieved_chunk_count === "number" ? (
               <span className="rounded-md border border-white/10 bg-white/[0.045] px-2 py-1 text-zinc-400">
                 Chunks: {answer.retrieved_chunk_count}
+              </span>
+            ) : null}
+            {answer.retrieval_strategy ? (
+              <span className="rounded-md border border-white/10 bg-white/[0.045] px-2 py-1 text-zinc-400">
+                Retrieval: {answer.retrieval_strategy}
+              </span>
+            ) : null}
+            {answer.retrieval_comparison?.baseline_chunks ? (
+              <span className="rounded-md border border-white/10 bg-white/[0.045] px-2 py-1 text-zinc-400">
+                Baseline {answer.retrieval_comparison.baseline_chunks}
+                {answer.retrieval_comparison.pageindex_chunks
+                  ? ` / PageIndex ${answer.retrieval_comparison.pageindex_chunks}`
+                  : ""}
               </span>
             ) : null}
           </div>

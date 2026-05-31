@@ -101,6 +101,8 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 DATABASE_URL=sqlite:///./citemind.db
 QDRANT_URL=http://localhost:6333
 QDRANT_COLLECTION=citemind_chunks
+RETRIEVAL_MODE=vector
+PAGE_INDEX_MIN_CHUNKS=8
 NEXT_PUBLIC_API_URL=http://localhost:8001
 ```
 
@@ -176,6 +178,8 @@ obvious noisy boilerplate.
 - Schema changes use a small local SQLite upgrade helper, not Alembic yet.
 - Qdrant settings are present for future integration; local development currently
   uses SQLite plus the hydrated in-memory vector store.
+- `RETRIEVAL_MODE=pageindex` enables an experimental PageIndex-style tree stored
+  on long uploaded documents for baseline comparison. `vector` remains default.
 
 ## Checks
 

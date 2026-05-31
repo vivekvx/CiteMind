@@ -48,6 +48,9 @@ def _ensure_local_schema() -> None:
                 connection.execute(
                     text("CREATE INDEX IF NOT EXISTS ix_documents_content_hash ON documents (content_hash)")
                 )
+        if "page_index_tree_json" not in document_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE documents ADD COLUMN page_index_tree_json TEXT"))
 
     if "document_chunks" in table_names:
         chunk_columns = {column["name"] for column in inspector.get_columns("document_chunks")}

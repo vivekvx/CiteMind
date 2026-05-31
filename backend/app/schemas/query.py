@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class QueryRequest(BaseModel):
@@ -24,3 +24,5 @@ class QueryResponse(BaseModel):
     requested_count: int = 10
     used_llm: bool = False
     retrieved_chunk_count: int = 0
+    retrieval_strategy: str = "vector"
+    retrieval_comparison: dict[str, int] = Field(default_factory=dict)

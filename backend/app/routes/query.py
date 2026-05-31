@@ -3,11 +3,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing import Optional
 
+from backend.app.core.config import get_settings
 from backend.app.db.database import get_db
 from backend.app.models.document import Document
 from backend.app.models.query_log import QueryLog
 from backend.app.schemas.query import QueryCitation, QueryRequest, QueryResponse
 from backend.app.agent.planner import run_research_agent
+from backend.app.services.answer_generator import generate_answer_result
+from backend.app.services.page_index import retrieve_page_index_records
 
 
 router = APIRouter(prefix="/query", tags=["query"])
@@ -21,6 +24,33 @@ def query_documents(
     document_ids = request.document_ids or _latest_document_ids(db)
     result = run_research_agent(request.query, document_ids or [])
     records = result.state.retrieved_chunks
+    retrieval_strategy = "vector"
+    retrieval_comparison = {
+        "baseline_chunks": len(records),
+        "pageindex_chunks": 0,
+    }
+
+    if get_settings().retrieval_mode == "pageindex":
+        page_index_records = retrieve_page_index_records(
+            db,
+            request.query,
+            document_ids,
+            result.state.intent,
+            max(len(records), 5),
+        )
+        retrieval_comparison["pageindex_chunks"] = len(page_index_records)
+        if page_index_records:
+            answer, used_llm = generate_answer_result(
+                request.query,
+                page_index_records,
+                result.state.intent,
+                result.state.requested_count,
+            )
+            result.answer = answer
+            result.state.retrieved_chunks = page_index_records
+            result.state.used_llm = used_llm
+            records = page_index_records
+            retrieval_strategy = "pageindex"
 
     query_log = QueryLog(query=request.query, answer=result.answer)
     db.add(query_log)
@@ -46,6 +76,8 @@ def query_documents(
         requested_count=result.state.requested_count,
         used_llm=result.state.used_llm,
         retrieved_chunk_count=len(citations),
+        retrieval_strategy=retrieval_strategy,
+        retrieval_comparison=retrieval_comparison,
     )
 
 

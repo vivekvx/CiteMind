@@ -41,7 +41,10 @@ init_db()
 
 class CiteMindRegressionTests(unittest.TestCase):
     def setUp(self) -> None:
-        get_settings().openai_api_key = None
+        settings = get_settings()
+        settings.openai_api_key = None
+        settings.retrieval_mode = "vector"
+        settings.page_index_min_chunks = 8
         vector_store.records = []
         with SessionLocal() as db:
             for model in (EvalResult, QueryLog, Citation, DocumentChunk, Document):
@@ -68,7 +71,7 @@ class CiteMindRegressionTests(unittest.TestCase):
             0,
         )
 
-    def test_local_schema_has_hash_and_embedding_columns(self) -> None:
+    def test_local_schema_has_hash_embedding_and_pageindex_columns(self) -> None:
         inspector = inspect(engine)
         document_columns = {
             column["name"]
@@ -80,6 +83,7 @@ class CiteMindRegressionTests(unittest.TestCase):
         }
 
         self.assertIn("content_hash", document_columns)
+        self.assertIn("page_index_tree_json", document_columns)
         self.assertIn("embedding_json", chunk_columns)
 
     def test_summary_retrieval_stays_scoped_to_selected_document(self) -> None:
@@ -259,6 +263,12 @@ class CiteMindRegressionTests(unittest.TestCase):
 
         self.assertGreater(second.id, first.id)
         self.assertEqual(response.document_ids_used, [first.id])
+        self.assertEqual(response.retrieval_strategy, "vector")
+        self.assertEqual(
+            response.retrieval_comparison["baseline_chunks"],
+            response.retrieved_chunk_count,
+        )
+        self.assertEqual(response.retrieval_comparison["pageindex_chunks"], 0)
         self.assertEqual(response.intent, QueryIntent.TOPICS.value)
         self.assertEqual(response.requested_count, 5)
         self.assertFalse(response.used_llm)
@@ -267,6 +277,59 @@ class CiteMindRegressionTests(unittest.TestCase):
         self.assertTrue(response.retrieved_chunks)
         self.assertTrue(
             all(chunk.document_id == first.id for chunk in response.retrieved_chunks)
+        )
+
+    def test_pageindex_tree_is_stored_for_long_opt_in_upload(self) -> None:
+        settings = get_settings()
+        settings.retrieval_mode = "pageindex"
+        settings.page_index_min_chunks = 2
+        content = (
+            b"PageIndex headings help long reports expose strategic sections. "
+            b"Vector retrieval still remains the baseline comparison path. "
+        ) * 35
+
+        with SessionLocal() as db:
+            uploaded = run(
+                upload_document(
+                    UploadFile(filename="long-report.md", file=BytesIO(content)),
+                    db,
+                )
+            )
+            document = db.get(Document, uploaded.id)
+
+        self.assertIsNotNone(document)
+        self.assertIsNotNone(document.page_index_tree_json)
+        self.assertIn("PageIndex headings", document.page_index_tree_json or "")
+
+    def test_pageindex_mode_uses_stored_tree_and_reports_comparison(self) -> None:
+        settings = get_settings()
+        settings.retrieval_mode = "pageindex"
+        settings.page_index_min_chunks = 1
+        content = (
+            b"Vector baseline discusses generic retrieval architecture. " * 30
+            + b"PageIndex tree highlights financial risk controls and audit evidence. " * 30
+        )
+
+        with SessionLocal() as db:
+            uploaded = run(
+                upload_document(
+                    UploadFile(filename="risk-report.md", file=BytesIO(content)),
+                    db,
+                )
+            )
+            response = query_documents(
+                QueryRequest(
+                    query="What does the report say about financial risk controls?",
+                    document_ids=[uploaded.id],
+                ),
+                db,
+            )
+
+        self.assertEqual(response.retrieval_strategy, "pageindex")
+        self.assertGreater(response.retrieval_comparison["baseline_chunks"], 0)
+        self.assertGreater(response.retrieval_comparison["pageindex_chunks"], 0)
+        self.assertTrue(
+            any("financial risk controls" in chunk.text for chunk in response.retrieved_chunks)
         )
 
     def test_structured_eval_rewards_cited_topic_answer(self) -> None:

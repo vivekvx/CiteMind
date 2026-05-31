@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.db.database import get_db
 from backend.app.models.citation import Citation
 from backend.app.models.document import Document
@@ -17,6 +18,7 @@ from backend.app.schemas.document import DocumentListItem, DocumentUploadRespons
 from backend.app.services.chunker import chunk_text
 from backend.app.services.document_loader import load_document_content
 from backend.app.services.embeddings import embed_chunks
+from backend.app.services.page_index import build_page_index_tree
 from backend.app.services.vector_store import vector_store
 
 
@@ -102,6 +104,14 @@ def _store_document_content(
         db.add(document)
         db.commit()
         db.refresh(document)
+
+    document.page_index_tree_json = (
+        build_page_index_tree(document.id, chunks)
+        if _should_store_page_index_tree(title, chunks)
+        else None
+    )
+    db.commit()
+    db.refresh(document)
 
     _replace_document_chunks(db, document.id, chunks, embeddings)
     vector_store.add_document(document.id, chunks, embeddings)
@@ -190,3 +200,12 @@ def _chunk_embeddings(chunks: list[DocumentChunk]) -> list[list[float]]:
         except json.JSONDecodeError:
             return []
     return embeddings
+
+
+def _should_store_page_index_tree(title: str, chunks: list[str]) -> bool:
+    settings = get_settings()
+    if settings.retrieval_mode != "pageindex":
+        return False
+    if len(chunks) < settings.page_index_min_chunks:
+        return False
+    return title.lower().endswith((".pdf", ".md", ".markdown", ".txt"))

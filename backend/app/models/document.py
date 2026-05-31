@@ -16,6 +16,7 @@ class Document(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     source_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
     content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    page_index_tree_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     abstract: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
