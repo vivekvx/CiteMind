@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
 from backend.app.core.rate_limit import enforce_rate_limit
-from backend.app.db.database import get_db
+from backend.app.db.database import get_db, require_production_database
 from backend.app.models.citation import Citation
 from backend.app.models.document import Document
 from backend.app.models.document_chunk import DocumentChunk
@@ -33,6 +33,7 @@ async def upload_document(
     db: Session = Depends(get_db),
     _: None = Depends(enforce_rate_limit),
 ) -> DocumentUploadResponse:
+    require_production_database()
     title = file.filename or "Untitled document"
     content = await file.read()
     if len(content) > get_settings().max_upload_bytes:
@@ -45,6 +46,7 @@ def reset_demo_data(
     db: Session = Depends(get_db),
     _: None = Depends(enforce_rate_limit),
 ) -> DocumentUploadResponse:
+    require_production_database()
     if not SAMPLE_DOCUMENT_PATH.exists():
         raise HTTPException(status_code=500, detail="Sample document not found.")
 
@@ -140,6 +142,7 @@ def delete_document(
     document_id: int,
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
+    require_production_database()
     document = db.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found.")

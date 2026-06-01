@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AnswerCard, QueryAnswer } from "../components/AnswerCard";
 import { EvalCard, EvalScores } from "../components/EvalCard";
@@ -12,7 +13,13 @@ type LlmHealth = {
   configured: boolean;
   ok: boolean;
   model: string;
+  base_url?: string;
+  chat_completions_url?: string;
   error?: string;
+};
+
+type ApiError = {
+  detail?: string;
 };
 
 export default function Home() {
@@ -70,7 +77,7 @@ export default function Home() {
       body: formData,
     });
     if (!response.ok) {
-      setStatus("Upload failed.");
+      setStatus(await errorMessage(response, "Upload failed."));
       return;
     }
     const uploadedDocument = (await response.json()) as { id: number };
@@ -83,7 +90,7 @@ export default function Home() {
       method: "DELETE",
     });
     if (!response.ok) {
-      setStatus("Could not delete document.");
+      setStatus(await errorMessage(response, "Could not delete document."));
       return;
     }
     if (selectedDocumentId === documentId) {
@@ -100,7 +107,7 @@ export default function Home() {
       method: "POST",
     });
     if (!response.ok) {
-      setStatus("Could not reset demo data.");
+      setStatus(await errorMessage(response, "Could not reset demo data."));
       return;
     }
     const demoDocument = (await response.json()) as { id: number };
@@ -116,6 +123,23 @@ export default function Home() {
       setStatus("Select a document before asking.");
       return;
     }
+    const currentDocumentId = selectedDocumentId;
+    try {
+      await loadDocuments(currentDocumentId);
+      const response = await fetch(`${API_URL}/documents`, { cache: "no-store" });
+      if (response.ok) {
+        const latestDocuments: DocumentItem[] = await response.json();
+        if (!latestDocuments.some((document) => document.id === currentDocumentId)) {
+          setAnswer(null);
+          setEvalScores(null);
+          setStatus("That document is no longer available. Upload it again before asking.");
+          return;
+        }
+      }
+    } catch {
+      setStatus("Could not refresh document context.");
+      return;
+    }
     setQuery(nextQuery);
     setEvalScores(null);
     setStatus("Retrieving answer...");
@@ -128,7 +152,7 @@ export default function Home() {
       }),
     });
     if (!response.ok) {
-      setStatus("Query failed.");
+      setStatus(await errorMessage(response, "Query failed."));
       return;
     }
     setAnswer(await response.json());
@@ -151,7 +175,7 @@ export default function Home() {
       }),
     });
     if (!response.ok) {
-      setStatus("Evaluation failed.");
+      setStatus(await errorMessage(response, "Evaluation failed."));
       return;
     }
     setEvalScores(await response.json());
@@ -171,8 +195,16 @@ export default function Home() {
                 CiteMind
               </h1>
             </div>
-            <div className="rounded-md border border-white/10 bg-black/30 px-3 py-2 text-xs text-zinc-400">
-              API: {API_URL.replace("http://", "")}
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                className="rounded-md border border-white/15 bg-white/[0.06] px-3 py-2 text-xs font-medium text-zinc-200 hover:border-white/30 hover:bg-white/[0.1]"
+                href="/status"
+              >
+                System status
+              </Link>
+              <div className="rounded-md border border-white/10 bg-black/30 px-3 py-2 text-xs text-zinc-400">
+                API: {API_URL.replace("http://", "")}
+              </div>
             </div>
           </div>
           <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-400">
@@ -190,7 +222,7 @@ export default function Home() {
           <div className="rounded-md border border-white/10 bg-zinc-950/80 px-4 py-3 text-sm text-zinc-300 shadow-lg shadow-black/25">
             <span className="font-medium text-white">LLM synthesis unavailable</span>
             {llmHealth.error ? `: ${llmHealth.error}` : ""}. CiteMind will use local
-            fallback answers until a configured LLM provider is reachable.
+            fallback answers until the configured OpenAI-compatible provider is reachable.
           </div>
         ) : null}
 
@@ -217,4 +249,13 @@ export default function Home() {
       </div>
     </main>
   );
+}
+
+async function errorMessage(response: Response, fallback: string) {
+  try {
+    const payload = (await response.json()) as ApiError;
+    return payload.detail || fallback;
+  } catch {
+    return fallback;
+  }
 }

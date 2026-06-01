@@ -4,6 +4,7 @@ import urllib.request
 
 from fastapi import APIRouter
 
+from backend.app.db.database import database_status
 from backend.app.services.llm_provider import get_llm_provider
 
 
@@ -11,8 +12,12 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-def health_check() -> dict[str, str]:
-    return {"status": "ok"}
+def health_check() -> dict[str, object]:
+    storage = database_status()
+    return {
+        "status": "ok" if storage["production_safe"] else "degraded",
+        "database": storage,
+    }
 
 
 @router.get("/health/llm")
@@ -23,6 +28,8 @@ def llm_health_check() -> dict[str, object]:
             "configured": False,
             "ok": False,
             "model": provider.chat_model,
+            "base_url": provider.base_url,
+            "chat_completions_url": provider.chat_completions_url,
             "error": "missing_llm_api_key",
         }
 
@@ -48,6 +55,8 @@ def llm_health_check() -> dict[str, object]:
             "configured": True,
             "ok": True,
             "model": provider.chat_model,
+            "base_url": provider.base_url,
+            "chat_completions_url": provider.chat_completions_url,
             "sample": body["choices"][0]["message"]["content"],
         }
     except Exception as exc:
@@ -57,6 +66,8 @@ def llm_health_check() -> dict[str, object]:
             "configured": True,
             "ok": False,
             "model": provider.chat_model,
+            "base_url": provider.base_url,
+            "chat_completions_url": provider.chat_completions_url,
             "error": error,
         }
 

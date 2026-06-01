@@ -11,6 +11,8 @@ from backend.app.agent.intent import (
     extract_word_limit,
 )
 from backend.app.services.llm_provider import get_llm_provider
+from backend.app.services.retriever import extract_mention_terms, is_first_mention_query
+from backend.app.services.retriever import extract_section_title, is_section_lookup_query
 from backend.app.services.vector_store import VectorRecord
 
 
@@ -56,13 +58,23 @@ def generate_answer_result(
     intent = intent or detect_query_intent(query)
     requested_count = requested_count or extract_requested_count(query)
     word_limit = word_limit or extract_word_limit(query)
+
+    section_answer = _generate_section_answer(query, records)
+    if section_answer:
+        return section_answer, False
+
+    first_mention_answer = _generate_first_mention_answer(query, records)
+    if first_mention_answer:
+        return first_mention_answer, False
+
     llm_answer, llm_error = _generate_llm_answer(query, records, intent, requested_count, word_limit)
     if llm_answer:
         return llm_answer, True
 
     fallback_prefix = (
-        "LLM generation is not configured. Add LLM_API_KEY or OPENAI_API_KEY to .env to enable "
-        "synthesized answers. Here is a limited extractive fallback:\n\n"
+        "LLM generation is not configured. Set LLM_API_KEY, LLM_BASE_URL, and "
+        "LLM_CHAT_MODEL for an OpenAI-compatible provider. Legacy OPENAI_API_KEY "
+        "settings are also supported. Here is a limited extractive fallback:\n\n"
         if not get_llm_provider().configured
         else f"LLM generation failed: {llm_error or 'UnknownError'}. Check backend logs.\n\n"
         "Here is a limited extractive fallback:\n\n"
@@ -97,6 +109,17 @@ def _generate_llm_answer(
     if not provider.configured:
         return None, None
 
+    requested_count_text = (
+        str(requested_count)
+        if intent in {
+            QueryIntent.IMPORTANT_POINTS,
+            QueryIntent.TOPICS,
+            QueryIntent.STUDY_NOTES,
+            QueryIntent.FLASHCARDS,
+        }
+        else "not applicable"
+    )
+
     payload = {
         "model": provider.chat_model,
         "messages": [
@@ -108,7 +131,7 @@ def _generate_llm_answer(
                 "role": "user",
                 "content": (
                     f"Question: {query}\n\n"
-                    f"Requested count: {requested_count}\n\n"
+                    f"Requested count: {requested_count_text}\n\n"
                     f"Word limit: {word_limit or 'none'}\n\n"
                     f"Retrieved context:\n{_format_context(records)}"
                 ),
@@ -219,7 +242,12 @@ def _system_prompt(intent: QueryIntent, requested_count: int, word_limit: Option
         return base + "Start with `Definition:` and answer concisely with citations."
     if intent == QueryIntent.COMPARISON:
         return base + "Output a concise markdown comparison table with citations in cells."
-    return base + "Output `Answer:` followed by a concise direct answer with citations."
+    return (
+        base
+        + "Output `Answer:` followed by a concise direct answer with citations. "
+        "Do not add recommendations, examples, numbered lists, or background facts unless "
+        "they are directly stated in the retrieved context."
+    )
 
 
 def _format_context(records: list[VectorRecord]) -> str:
@@ -267,6 +295,77 @@ def _generate_topics(records: list[VectorRecord], requested_count: int) -> str:
 def _generate_direct_answer(records: list[VectorRecord]) -> str:
     sentences = [_sentence(record) for record in records[:3]]
     return f"Answer: {' '.join(sentences)}"
+
+
+def _generate_section_answer(query: str, records: list[VectorRecord]) -> Optional[str]:
+    if not is_section_lookup_query(query):
+        return None
+
+    section_title = extract_section_title(query)
+    if not section_title:
+        return None
+
+    sorted_records = sorted(records, key=lambda record: (record.document_id, record.chunk_index))
+    started = False
+    for record in sorted_records:
+        candidate_text = record.text
+        if not started:
+            remaining = _text_after_section_heading(candidate_text, section_title)
+            if remaining is None:
+                continue
+            candidate_text = remaining
+            started = True
+
+        sentence = _first_useful_section_sentence(candidate_text, section_title)
+        if sentence:
+            return (
+                f"Answer: The first sentence I found under the section "
+                f"`{section_title}` is:\n\n"
+                f"> {sentence}\n\n"
+                f"{_citation(record)}"
+            )
+
+    return None
+
+
+def _generate_first_mention_answer(query: str, records: list[VectorRecord]) -> Optional[str]:
+    if not is_first_mention_query(query):
+        return None
+
+    terms = extract_mention_terms(query)
+    if not terms:
+        return None
+
+    candidates: list[tuple[int, int, int, str, str, VectorRecord]] = []
+    for record in records:
+        for sentence in _sentence_candidates(record.text):
+            if _looks_like_navigation_text(sentence):
+                continue
+            lower_sentence = sentence.lower()
+            for term in terms:
+                position = lower_sentence.find(term.lower())
+                if position >= 0:
+                    candidates.append(
+                        (
+                            record.document_id,
+                            record.chunk_index,
+                            position,
+                            term,
+                            sentence,
+                            record,
+                        )
+                    )
+
+    if not candidates:
+        return None
+
+    _, _, _, term, sentence, record = sorted(candidates, key=lambda item: item[:3])[0]
+    return (
+        f"Answer: The first sentence in the retrieved document context that uses "
+        f"`{term}` is:\n\n"
+        f"> {sentence}\n\n"
+        f"{_citation(record)}"
+    )
 
 
 def _generate_definition(records: list[VectorRecord]) -> str:
@@ -366,6 +465,96 @@ def _best_sentence(text: str) -> str:
     if len(selected) > 260:
         selected = selected[:257].rsplit(" ", 1)[0].rstrip() + "..."
     return selected
+
+
+def _sentence_candidates(text: str) -> list[str]:
+    normalized = " ".join(text.split())
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", normalized)
+        if len(sentence.strip()) >= 30 and re.search(r"[.!?]$", sentence.strip())
+    ]
+
+
+def _text_after_section_heading(text: str, section_title: str) -> Optional[str]:
+    normalized_title = _normalize_heading(section_title)
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if _looks_like_navigation_text(line):
+            continue
+        normalized_line = _normalize_heading(_strip_page_marker(line))
+        if normalized_line == normalized_title or _heading_token_overlap(normalized_title, normalized_line) >= 0.75:
+            return "\n".join(lines[index + 1 :]).strip()
+
+    match = re.search(re.escape(section_title), text, re.IGNORECASE)
+    if match:
+        return text[match.end() :].strip()
+    return None
+
+
+def _first_useful_section_sentence(text: str, section_title: str) -> Optional[str]:
+    cleaned_lines = []
+    normalized_title = _normalize_heading(section_title)
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        normalized_line = _normalize_heading(_strip_page_marker(stripped))
+        if not normalized_line or normalized_line == normalized_title:
+            continue
+        if _looks_like_navigation_text(stripped):
+            continue
+        if re.search(r"^\d+\s*\|\s*|\s*\|\s*\d+$", stripped):
+            continue
+        if stripped.lower().startswith("mastering ai agents"):
+            continue
+        cleaned_lines.append(stripped)
+
+    for sentence in _sentence_candidates(" ".join(cleaned_lines)):
+        if not _is_useful_sentence(sentence):
+            continue
+        return sentence
+    return None
+
+
+def _normalize_heading(text: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", text.lower())
+    return " ".join(normalized.split())
+
+
+def _strip_page_marker(text: str) -> str:
+    cleaned = text.strip()
+    cleaned = re.sub(r"\.{2,}\s*\d+\s*$", "", cleaned)
+    cleaned = re.sub(r"\s*\|\s*\d+\s*$", "", cleaned)
+    cleaned = re.sub(r"\s{2,}\d+\s*$", "", cleaned)
+    cleaned = re.sub(r"(?<=\D)\s+\d{1,4}\s*$", "", cleaned)
+    cleaned = re.sub(r"^\d+\s*\|\s*", "", cleaned)
+    cleaned = re.sub(r"^\d{1,4}\s+(?=\D)", "", cleaned)
+    return cleaned.strip()
+
+
+def _heading_token_overlap(left: str, right: str) -> float:
+    ignored = {"a", "an", "are", "is", "of", "the", "why"}
+    left_tokens = {token for token in left.split() if token not in ignored}
+    right_tokens = {token for token in right.split() if token not in ignored}
+    if not left_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens)
+
+
+def _looks_like_navigation_text(text: str) -> bool:
+    normalized = " ".join(text.split()).lower()
+    if not normalized:
+        return False
+    if normalized.startswith(("table of contents", "contents", "index")):
+        return True
+    if re.search(r"\.{2,}\s*\d+\s*$", text):
+        return True
+    if re.search(r"\s{2,}\d+\s*$", text):
+        return True
+    if re.search(r"(?<=\D)\s+\d{1,4}\s*$", text) and not re.search(r"[.!?]\s*$", text):
+        return True
+    return False
 
 
 def _topic_name(sentence: str) -> str:

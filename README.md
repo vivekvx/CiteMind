@@ -4,9 +4,11 @@ CiteMind is a citation-first AI research assistant for document Q&A, summaries, 
 
 ## Live Demo
 
-- Frontend: https://citemind-six.vercel.app
-- Backend API: https://citemind-api.vercel.app
+- App: https://citemind-six.vercel.app
+- Status page: https://citemind-six.vercel.app/status
 - Health check: https://citemind-six.vercel.app/api/health
+
+The public app uses one website. API requests are served through the frontend domain under `/api/*`, and `/status` provides a human-readable health view.
 
 ## Screenshots
 
@@ -27,7 +29,7 @@ CiteMind is a citation-first AI research assistant for document Q&A, summaries, 
 
 ```mermaid
 flowchart LR
-    A["Next.js UI"] --> B["API route rewrite / NEXT_PUBLIC_API_URL"]
+    A["Next.js UI on one public domain"] --> B["/api/* rewrite"]
     B --> C["FastAPI backend"]
     C --> D["Document loader"]
     D --> E["Chunk store"]
@@ -119,12 +121,14 @@ For local frontend runs, create `frontend/.env.local`:
 NEXT_PUBLIC_API_URL=http://localhost:8001
 ```
 
-For Vercel frontend deployments:
+For Vercel deployments:
 
 ```bash
 NEXT_PUBLIC_API_URL=/api
 BACKEND_API_URL=<deployed-backend-url>
 ```
+
+With this setup, browser traffic stays on the frontend domain while Next.js rewrites `/api/*` requests to the backend service.
 
 For hosted persistence:
 
@@ -136,7 +140,7 @@ Do not commit real `.env` files or API keys.
 
 ## LLM Providers
 
-`LLM_*` settings take precedence over `OPENAI_*`, so the backend can use OpenRouter, DeepSeek, OpenAI, or another OpenAI-compatible provider without code changes.
+`LLM_*` settings take precedence over the legacy `OPENAI_*` settings, so the backend can use OpenRouter, DeepSeek, OpenAI, or another OpenAI-compatible chat endpoint without code changes.
 
 OpenRouter:
 
@@ -154,11 +158,33 @@ LLM_API_KEY=<your-deepseek-key>
 LLM_CHAT_MODEL=deepseek-chat
 ```
 
-Check provider status:
+Local verification flow:
+
+```bash
+cd /Users/vivek/CiteMind
+backend/.venv/bin/python -m uvicorn backend.app.main:app --port 8001
+```
+
+In another terminal:
 
 ```bash
 curl http://localhost:8001/health/llm
 ```
+
+Expected shape when the provider is reachable:
+
+```json
+{
+  "configured": true,
+  "ok": true,
+  "model": "deepseek-chat",
+  "base_url": "https://api.deepseek.com",
+  "chat_completions_url": "https://api.deepseek.com/chat/completions",
+  "sample": "OK"
+}
+```
+
+If `ok` is `false`, check `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_CHAT_MODEL`, provider billing/quota, and rate limits.
 
 ## API
 
@@ -197,10 +223,13 @@ git diff --check
 
 ## Deployment
 
-Current Vercel projects:
+Current Vercel deployment:
 
-- Frontend: `https://citemind-six.vercel.app`
-- Backend API: `https://citemind-api.vercel.app`
+- Public app: `https://citemind-six.vercel.app`
+- API from the same public domain: `https://citemind-six.vercel.app/api/health`
+- Backend service: `https://citemind-api.vercel.app`
+
+The backend service exists so FastAPI can run separately on Vercel, but it is not the user-facing website.
 
 Recommended backend environment:
 

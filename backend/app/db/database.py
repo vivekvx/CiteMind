@@ -1,5 +1,8 @@
 import json
+import os
+import shutil
 from collections.abc import Generator
+from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy import select
@@ -9,11 +12,19 @@ from backend.app.core.config import get_settings
 
 
 settings = get_settings()
-database_url = (
+configured_database_url = (
     settings.database_url.replace("postgres://", "postgresql://", 1)
     if settings.database_url.startswith("postgres://")
     else settings.database_url
 )
+database_url = configured_database_url
+
+if os.environ.get("VERCEL") and configured_database_url.startswith("sqlite:///./"):
+    source_path = Path(configured_database_url.removeprefix("sqlite:///")).resolve()
+    target_path = Path("/tmp") / source_path.name
+    if source_path.exists() and not target_path.exists():
+        shutil.copy2(source_path, target_path)
+    database_url = f"sqlite:///{target_path}"
 
 connect_args = (
     {"check_same_thread": False}
@@ -23,6 +34,43 @@ connect_args = (
 
 engine = create_engine(database_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def database_status() -> dict[str, object]:
+    return {
+        "backend": database_backend(),
+        "persistent": is_persistent_database(),
+        "production_safe": is_database_production_safe(),
+    }
+
+
+def database_backend() -> str:
+    if database_url.startswith("postgresql"):
+        return "postgresql"
+    if database_url.startswith("sqlite"):
+        return "sqlite"
+    return "unknown"
+
+
+def is_persistent_database() -> bool:
+    return configured_database_url.startswith("postgresql")
+
+
+def is_database_production_safe() -> bool:
+    return not os.environ.get("VERCEL") or is_persistent_database()
+
+
+def require_production_database() -> None:
+    if not is_database_production_safe():
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Persistent DATABASE_URL is required on Vercel before uploads, "
+                "queries, or deletes can be reliable."
+            ),
+        )
 
 
 def get_db() -> Generator[Session, None, None]:

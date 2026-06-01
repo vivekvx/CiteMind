@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.app.core.rate_limit import enforce_rate_limit
-from backend.app.db.database import get_db
+from backend.app.db.database import get_db, require_production_database
 from backend.app.models.eval_result import EvalResult
 from backend.app.schemas.eval import EvalRunRequest, EvalRunResponse
 from backend.app.services.evaluator import evaluate
@@ -16,6 +16,7 @@ def run_eval(
     request: EvalRunRequest,
     db: Session = Depends(get_db),
 ) -> EvalRunResponse:
+    require_production_database()
     scores = evaluate(request)
     result = EvalResult(
         query=request.query,

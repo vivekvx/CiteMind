@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing import Optional
 
 from backend.app.core.rate_limit import enforce_rate_limit
 from backend.app.core.config import get_settings
-from backend.app.db.database import get_db
+from backend.app.db.database import get_db, hydrate_vector_store, require_production_database
 from backend.app.models.document import Document
 from backend.app.models.query_log import QueryLog
 from backend.app.schemas.query import QueryCitation, QueryRequest, QueryResponse
@@ -22,8 +23,13 @@ def query_documents(
     request: QueryRequest,
     db: Session = Depends(get_db),
 ) -> QueryResponse:
+    require_production_database()
     document_ids = request.document_ids or _latest_document_ids(db)
+    _ensure_documents_exist(db, document_ids or [])
     result = run_research_agent(request.query, document_ids or [])
+    if not result.state.retrieved_chunks and document_ids:
+        hydrate_vector_store()
+        result = run_research_agent(request.query, document_ids or [])
     records = result.state.retrieved_chunks
     retrieval_strategy = "vector"
     retrieval_comparison = {
@@ -54,10 +60,7 @@ def query_documents(
             records = page_index_records
             retrieval_strategy = "pageindex"
 
-    query_log = QueryLog(query=request.query, answer=result.answer)
-    db.add(query_log)
-    db.commit()
-    db.refresh(query_log)
+    query_id = _save_query_log(db, request.query, result.answer)
 
     citations = [
         QueryCitation(
@@ -69,7 +72,7 @@ def query_documents(
     ]
 
     return QueryResponse(
-        query_id=query_log.id,
+        query_id=query_id,
         answer=result.answer,
         citations=citations,
         retrieved_chunks=citations,
@@ -84,8 +87,38 @@ def query_documents(
     )
 
 
+def _save_query_log(db: Session, query: str, answer: str) -> int:
+    query_log = QueryLog(query=query, answer=answer)
+    db.add(query_log)
+    try:
+        db.commit()
+        db.refresh(query_log)
+        return query_log.id
+    except SQLAlchemyError as exc:
+        db.rollback()
+        print(f"Query logging skipped: {type(exc).__name__}: {exc}")
+        return 0
+
+
 def _latest_document_ids(db: Session) -> Optional[list[int]]:
     latest_document_id = db.scalar(
         select(Document.id).order_by(Document.created_at.desc()).limit(1)
     )
     return [latest_document_id] if latest_document_id is not None else None
+
+
+def _ensure_documents_exist(db: Session, document_ids: list[int]) -> None:
+    if not document_ids:
+        return
+    existing_ids = set(
+        db.scalars(select(Document.id).where(Document.id.in_(document_ids)))
+    )
+    missing_ids = [document_id for document_id in document_ids if document_id not in existing_ids]
+    if missing_ids:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Selected document is no longer available. Upload it again after "
+                "persistent storage is configured."
+            ),
+        )

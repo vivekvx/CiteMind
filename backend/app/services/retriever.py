@@ -88,6 +88,16 @@ def retrieve_context_for_intent(
     intent: QueryIntent,
     requested_count: int,
 ) -> list[VectorRecord]:
+    if is_section_lookup_query(question):
+        records = retrieve_section_context(question, document_ids)
+        if records:
+            return records
+
+    if is_first_mention_query(question):
+        records = retrieve_first_mention_context(question, document_ids)
+        if records:
+            return records
+
     if intent in {
         QueryIntent.SUMMARY,
         QueryIntent.IMPORTANT_POINTS,
@@ -102,6 +112,109 @@ def retrieve_context_for_intent(
     records = retrieve(question, top_k=top_k * 2, document_ids=document_ids)
     clean_records = [record for record in records if not is_noisy_chunk(record.text)]
     return rerank_chunks(question, clean_records or records, intent)[:top_k]
+
+
+def is_section_lookup_query(question: str) -> bool:
+    normalized = question.lower()
+    return "section" in normalized and bool(extract_section_title(question))
+
+
+def extract_section_title(question: str) -> Optional[str]:
+    patterns = (
+        r"\bsection\s+(?:called|titled|named)\s+['\"]([^'\"]{3,120})['\"]",
+        r"\bsection\s+['\"]([^'\"]{3,120})['\"]",
+        r"\bunder\s+(?:the\s+)?['\"]([^'\"]{3,120})['\"]",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, question, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def retrieve_section_context(
+    question: str,
+    document_ids: Optional[list[int]],
+    max_records: int = 6,
+) -> list[VectorRecord]:
+    section_title = extract_section_title(question)
+    if not section_title:
+        return []
+
+    allowed_document_ids = set(document_ids or [])
+    records = [
+        record
+        for record in vector_store.records
+        if not allowed_document_ids or record.document_id in allowed_document_ids
+    ]
+    records.sort(key=lambda record: (record.document_id, record.chunk_index))
+
+    candidates: list[tuple[float, int, VectorRecord]] = []
+    for position, record in enumerate(records):
+        score = _section_match_score(section_title, record.text)
+        if score > 0:
+            candidates.append((score, position, record))
+
+    if not candidates:
+        return []
+
+    candidates.sort(key=lambda item: (-item[0], item[2].document_id, item[2].chunk_index))
+    _, start_position, matched_record = candidates[0]
+    selected: list[VectorRecord] = []
+    for record in records[start_position : start_position + max_records]:
+        if record.document_id != matched_record.document_id:
+            break
+        selected.append(record)
+    return selected
+
+
+def is_first_mention_query(question: str) -> bool:
+    normalized = question.lower()
+    return (
+        any(term in normalized for term in ("first time", "first mention", "first used", "very first"))
+        and any(term in normalized for term in ("term", "word", "phrase"))
+    )
+
+
+def retrieve_first_mention_context(
+    question: str,
+    document_ids: Optional[list[int]],
+    max_records: int = 5,
+) -> list[VectorRecord]:
+    terms = extract_mention_terms(question)
+    if not terms:
+        return []
+
+    allowed_document_ids = set(document_ids or [])
+    records = [
+        record
+        for record in vector_store.records
+        if not allowed_document_ids or record.document_id in allowed_document_ids
+    ]
+    records.sort(key=lambda record: (record.document_id, record.chunk_index))
+
+    matches = [
+        record
+        for record in records
+        if not _is_navigation_chunk(record.text) and _record_has_sentence_match(record.text, terms)
+    ]
+    return matches[:max_records]
+
+
+def extract_mention_terms(question: str) -> list[str]:
+    quoted_terms = [
+        term.strip()
+        for term in re.findall(r"['\"]([^'\"]{2,80})['\"]", question)
+        if term.strip()
+    ]
+    if quoted_terms:
+        return quoted_terms
+
+    match = re.search(r"\bterm\s+([a-z0-9][a-z0-9 -]{1,80})", question, re.IGNORECASE)
+    if not match:
+        return []
+    raw_terms = re.split(r"\s+or\s+|\s+and\s+|,", match.group(1), flags=re.IGNORECASE)
+    return [term.strip(" ?.") for term in raw_terms if term.strip(" ?.")]
 
 
 def retrieve_summary_context(
@@ -289,6 +402,104 @@ def _tokens(text: str) -> list[str]:
         for token in re.findall(r"[a-z0-9]+", text.lower())
         if len(token) > 2 and token not in STOPWORDS
     ]
+
+
+def _record_has_sentence_match(text: str, terms: list[str]) -> bool:
+    for sentence in _sentence_candidates(text):
+        lower = sentence.lower()
+        if any(term.lower() in lower for term in terms):
+            return True
+    return False
+
+
+def _section_match_score(section_title: str, text: str) -> float:
+    if _is_navigation_chunk(text):
+        return 0.0
+
+    normalized_title = _normalize_heading(section_title)
+    normalized_text = _normalize_heading(text)
+    if not normalized_title:
+        return 0
+
+    best_score = 0.0
+    for line in text.splitlines():
+        heading = _normalize_heading(_strip_page_marker(line))
+        if not heading:
+            continue
+        if heading == normalized_title:
+            best_score = max(best_score, 4.0)
+        elif _heading_token_overlap(normalized_title, heading) >= 0.75:
+            best_score = max(best_score, 3.0)
+
+    if normalized_title in normalized_text:
+        best_score = max(best_score, 2.0)
+    elif _heading_token_overlap(normalized_title, normalized_text[:400]) >= 0.75:
+        best_score = max(best_score, 1.0)
+
+    return best_score
+
+
+def _normalize_heading(text: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", text.lower())
+    return " ".join(normalized.split())
+
+
+def _strip_page_marker(text: str) -> str:
+    cleaned = text.strip()
+    cleaned = re.sub(r"\.{2,}\s*\d+\s*$", "", cleaned)
+    cleaned = re.sub(r"\s*\|\s*\d+\s*$", "", cleaned)
+    cleaned = re.sub(r"\s{2,}\d+\s*$", "", cleaned)
+    cleaned = re.sub(r"(?<=\D)\s+\d{1,4}\s*$", "", cleaned)
+    cleaned = re.sub(r"^\d+\s*\|\s*", "", cleaned)
+    cleaned = re.sub(r"^\d{1,4}\s+(?=\D)", "", cleaned)
+    return cleaned.strip()
+
+
+def _heading_token_overlap(left: str, right: str) -> float:
+    ignored = {"a", "an", "are", "is", "of", "the", "why"}
+    left_tokens = {token for token in left.split() if token not in ignored}
+    right_tokens = {token for token in right.split() if token not in ignored}
+    if not left_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens)
+
+
+def _sentence_candidates(text: str) -> list[str]:
+    normalized = " ".join(text.split())
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", normalized)
+        if len(sentence.strip()) >= 30 and re.search(r"[.!?]$", sentence.strip())
+    ]
+
+
+def _is_navigation_chunk(text: str) -> bool:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    normalized = " ".join(text.split()).lower()
+    if normalized.startswith(("table of contents", "contents", "index")):
+        return True
+    if not lines:
+        return False
+
+    navigation_lines = [
+        line
+        for line in lines
+        if _looks_like_navigation_line(line)
+    ]
+    return len(navigation_lines) / len(lines) >= 0.5
+
+
+def _looks_like_navigation_line(line: str) -> bool:
+    normalized = line.strip().lower()
+    if normalized in {"table of contents", "contents", "index"}:
+        return True
+    if re.search(r"\.{2,}\s*\d+\s*$", line):
+        return True
+    if re.search(r"\s{2,}\d+\s*$", line):
+        return True
+    if re.search(r"(?<=\D)\s+\d{1,4}\s*$", line) and not re.search(r"[.!?]\s*$", line):
+        return True
+    return False
 
 
 def _add_record(

@@ -29,6 +29,16 @@ def create_app() -> FastAPI:
     app.include_router(documents_router)
     app.include_router(query_router)
     app.include_router(evals_router)
+
+    @app.get("/")
+    def root() -> dict[str, str]:
+        return {
+            "name": "CiteMind API",
+            "status": "ok",
+            "docs": "/docs",
+            "health": "/health",
+        }
+
     return app
 
 

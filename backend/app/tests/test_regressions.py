@@ -11,7 +11,9 @@ _TEMP_DIR = tempfile.TemporaryDirectory()
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEMP_DIR.name}/citemind-test.db"
 
 from sqlalchemy import delete, func, inspect, select
+from sqlalchemy.exc import SQLAlchemyError
 
+from backend.app.db import database as database_module
 from backend.app.agent.intent import (
     QueryIntent,
     detect_query_intent,
@@ -19,7 +21,7 @@ from backend.app.agent.intent import (
     extract_word_limit,
 )
 from backend.app.core.config import get_settings
-from backend.app.db.database import SessionLocal, init_db
+from backend.app.db.database import SessionLocal, database_status, init_db
 from backend.app.db.database import engine
 from backend.app.models.citation import Citation
 from backend.app.models.document import Document
@@ -28,7 +30,7 @@ from backend.app.models.eval_result import EvalResult
 from backend.app.models.query_log import QueryLog
 from backend.app.core.rate_limit import rate_limiter
 from backend.app.routes.documents import delete_document, reset_demo_data, upload_document
-from backend.app.routes.health import llm_health_check
+from backend.app.routes.health import health_check, llm_health_check
 from backend.app.routes.query import query_documents
 from backend.app.schemas.eval import EvalRunRequest
 from backend.app.schemas.query import QueryRequest
@@ -37,11 +39,13 @@ from backend.app.services.embeddings import embed_chunks
 from backend.app.services.evaluator import evaluate
 from backend.app.services.llm_provider import get_llm_provider
 from backend.app.services.retriever import (
+    extract_section_title,
     is_noisy_chunk,
     keyword_score,
     retrieve_context_for_intent,
 )
-from backend.app.services.vector_store import vector_store
+from backend.app.services.answer_generator import generate_answer_result
+from backend.app.services.vector_store import VectorRecord, vector_store
 
 
 init_db()
@@ -102,6 +106,36 @@ class CiteMindRegressionTests(unittest.TestCase):
         self.assertIn("page_index_tree_json", document_columns)
         self.assertIn("embedding_json", chunk_columns)
 
+    def test_local_database_status_allows_sqlite_for_development(self) -> None:
+        status = database_status()
+
+        self.assertEqual(status["backend"], "sqlite")
+        self.assertFalse(status["persistent"])
+        self.assertTrue(status["production_safe"])
+
+    def test_vercel_sqlite_database_is_reported_and_blocked_as_unsafe(self) -> None:
+        original_vercel = os.environ.get("VERCEL")
+        original_configured_url = database_module.configured_database_url
+        os.environ["VERCEL"] = "1"
+        database_module.configured_database_url = "sqlite:///./citemind.db"
+        try:
+            status = database_module.database_status()
+
+            self.assertEqual(status["backend"], "sqlite")
+            self.assertFalse(status["persistent"])
+            self.assertFalse(status["production_safe"])
+            self.assertEqual(health_check()["status"], "degraded")
+            with self.assertRaises(HTTPException) as error:
+                database_module.require_production_database()
+            self.assertEqual(error.exception.status_code, 503)
+            self.assertIn("Persistent DATABASE_URL", error.exception.detail)
+        finally:
+            if original_vercel is None:
+                os.environ.pop("VERCEL", None)
+            else:
+                os.environ["VERCEL"] = original_vercel
+            database_module.configured_database_url = original_configured_url
+
     def test_generic_llm_provider_overrides_openai_defaults(self) -> None:
         settings = get_settings()
         settings.openai_api_key = "openai-key"
@@ -153,6 +187,11 @@ class CiteMindRegressionTests(unittest.TestCase):
 
         self.assertFalse(response["configured"])
         self.assertFalse(response["ok"])
+        self.assertEqual(response["base_url"], "https://api.openai.com/v1")
+        self.assertEqual(
+            response["chat_completions_url"],
+            "https://api.openai.com/v1/chat/completions",
+        )
         self.assertEqual(response["error"], "missing_llm_api_key")
 
     def test_summary_retrieval_stays_scoped_to_selected_document(self) -> None:
@@ -371,6 +410,110 @@ class CiteMindRegressionTests(unittest.TestCase):
         self.assertTrue(
             all(chunk.document_id == first.id for chunk in response.retrieved_chunks)
         )
+
+    def test_query_logging_failure_does_not_break_answer(self) -> None:
+        with SessionLocal() as db:
+            document = Document(
+                title="readonly-log.md",
+                abstract="Transformer models use attention layers.",
+                content_hash="readonly-log",
+            )
+            db.add(document)
+            db.commit()
+            db.refresh(document)
+            chunks = [
+                "Transformer models use attention layers for grounded language modeling. " * 12,
+            ]
+            vector_store.add_document(document.id, chunks, embed_chunks(chunks))
+            original_commit = db.commit
+
+            def fail_commit() -> None:
+                raise SQLAlchemyError("readonly demo database")
+
+            db.commit = fail_commit  # type: ignore[method-assign]
+            try:
+                response = query_documents(
+                    QueryRequest(
+                        query="What do transformer models use?",
+                        document_ids=[document.id],
+                    ),
+                    db,
+                )
+            finally:
+                db.commit = original_commit  # type: ignore[method-assign]
+
+        self.assertEqual(response.query_id, 0)
+        self.assertIn("Transformer", response.answer)
+        self.assertTrue(response.retrieved_chunks)
+
+    def test_first_mention_query_returns_exact_sentence(self) -> None:
+        chunks = [
+            "Table of contents Transformer 9 Attention 12.",
+            (
+                "Input tokens are converted into embedding vectors. "
+                "This embedding is then fed into the transformer for processing."
+            ),
+            "Attention mechanisms are explained after the transformer overview.",
+        ]
+        vector_store.add_document(8, chunks, embed_chunks(chunks))
+
+        question = (
+            "Find the very first time the term 'Transformer' or 'Attention' is used "
+            "in this document. Quote the exact sentence it appears in"
+        )
+        records = retrieve_context_for_intent(question, [8], QueryIntent.NORMAL_QA, 10)
+        answer, used_llm = generate_answer_result(
+            question,
+            records,
+            QueryIntent.NORMAL_QA,
+            10,
+            None,
+        )
+
+        self.assertFalse(used_llm)
+        self.assertEqual(records[0].chunk_index, 1)
+        self.assertIn(
+            "This embedding is then fed into the transformer for processing.",
+            answer,
+        )
+        self.assertNotIn("Table of contents", answer)
+        self.assertIn("[Document 8, chunk 1]", answer)
+
+    def test_section_title_query_retrieves_heading_context_and_quotes_first_sentence(self) -> None:
+        chunks = [
+            "Table of Contents\nWhy AI Agents Are the Future ........ 12\nOther Section ........ 20",
+            "Earlier material discusses unrelated automation history.",
+            (
+                "12 | Why AI Agents Are the Future\n"
+                "AI agents are becoming practical collaborators for complex work. "
+                "They can plan, use tools, and adapt to feedback."
+            ),
+            "The next paragraph continues the section with more implementation detail.",
+        ]
+        vector_store.add_document(7, chunks, embed_chunks(chunks))
+
+        question = (
+            "What is the very first sentence written on the page under the section "
+            "titled 'Why AI Agents Are the Future'?"
+        )
+        records = retrieve_context_for_intent(question, [7], QueryIntent.DEFINITION, 10)
+        answer, used_llm = generate_answer_result(
+            question,
+            records,
+            QueryIntent.DEFINITION,
+            10,
+            None,
+        )
+
+        self.assertEqual(extract_section_title(question), "Why AI Agents Are the Future")
+        self.assertEqual(records[0].chunk_index, 2)
+        self.assertFalse(used_llm)
+        self.assertIn(
+            "AI agents are becoming practical collaborators for complex work.",
+            answer,
+        )
+        self.assertNotIn("Table of Contents", answer)
+        self.assertIn("[Document 7, chunk 2]", answer)
 
     def test_summary_query_preserves_word_limit_and_uses_smaller_context(self) -> None:
         content = (
