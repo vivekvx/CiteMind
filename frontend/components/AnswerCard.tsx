@@ -85,6 +85,9 @@ export function AnswerCard({ answer, onRunEval }: AnswerCardProps) {
                 {answer.retrieval_comparison.pageindex_chunks
                   ? ` / PageIndex ${answer.retrieval_comparison.pageindex_chunks}`
                   : ""}
+                {answer.retrieval_comparison.reranked_chunks
+                  ? ` / Reranked ${answer.retrieval_comparison.reranked_chunks}`
+                  : ""}
               </span>
             ) : null}
           </div>

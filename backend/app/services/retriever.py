@@ -2,6 +2,7 @@ import re
 from typing import Optional
 
 from backend.app.agent.intent import QueryIntent
+from backend.app.core.config import get_settings
 from backend.app.services.embeddings import embed_text
 from backend.app.services.vector_store import VectorRecord, vector_store
 
@@ -108,7 +109,11 @@ def retrieve_context_for_intent(
     }:
         return retrieve_summary_context(document_ids, question, requested_count, intent)
 
-    top_k = 8 if intent == QueryIntent.COMPARISON else 5
+    settings = get_settings()
+    if settings.reranker_mode == "flashrank":
+        top_k = max(settings.reranker_top_k, settings.reranker_final_k)
+    else:
+        top_k = 8 if intent == QueryIntent.COMPARISON else 5
     records = retrieve(question, top_k=top_k * 2, document_ids=document_ids)
     clean_records = [record for record in records if not is_noisy_chunk(record.text)]
     return rerank_chunks(question, clean_records or records, intent)[:top_k]

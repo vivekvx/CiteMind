@@ -1,5 +1,8 @@
+import asyncio
 import html
 import re
+import tempfile
+import threading
 import zipfile
 from html.parser import HTMLParser
 from io import BytesIO
@@ -7,6 +10,13 @@ from typing import Optional
 
 import fitz
 from fastapi import HTTPException, UploadFile
+
+from backend.app.core.config import get_settings
+
+try:
+    from llama_parse import LlamaParse
+except ImportError:
+    LlamaParse = None  # type: ignore[assignment]
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -48,6 +58,9 @@ def _extract_document_text(content: bytes, filetype: str) -> str:
 
 
 def _extract_pdf_text(content: bytes) -> str:
+    if get_settings().document_parser == "llama_parse":
+        return _extract_pdf_markdown_with_llama_parse(content)
+
     text = _extract_document_text(content, "pdf")
     if not text:
         raise HTTPException(
@@ -55,6 +68,74 @@ def _extract_pdf_text(content: bytes) -> str:
             detail="PDF contains no extractable text.",
         )
     return text
+
+
+def _extract_pdf_markdown_with_llama_parse(content: bytes) -> str:
+    settings = get_settings()
+    if not settings.llama_cloud_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="LLAMA_CLOUD_API_KEY is required when DOCUMENT_PARSER=llama_parse.",
+        )
+    if LlamaParse is None:
+        raise HTTPException(
+            status_code=400,
+            detail="llama-parse is not installed. Install it before using DOCUMENT_PARSER=llama_parse.",
+        )
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as temporary_file:
+        temporary_file.write(content)
+        temporary_file.flush()
+        parser = LlamaParse(
+            api_key=settings.llama_cloud_api_key,
+            result_type="markdown",
+        )
+        documents = _run_llama_parse(parser, temporary_file.name)
+
+    markdown_parts = [_document_to_markdown(document) for document in documents]
+    return _clean_extracted_text("\n\n".join(part for part in markdown_parts if part))
+
+
+def _run_llama_parse(parser: object, file_path: str) -> list[object]:
+    if hasattr(parser, "aload_data"):
+        return _run_coroutine_sync(parser.aload_data(file_path))  # type: ignore[attr-defined]
+    if hasattr(parser, "load_data"):
+        return parser.load_data(file_path)  # type: ignore[attr-defined]
+    raise HTTPException(status_code=400, detail="Configured LlamaParse parser cannot load PDFs.")
+
+
+def _run_coroutine_sync(coroutine: object) -> list[object]:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coroutine)  # type: ignore[arg-type]
+
+    result: list[object] = []
+    error: list[BaseException] = []
+
+    def runner() -> None:
+        try:
+            result.extend(asyncio.run(coroutine))  # type: ignore[arg-type]
+        except BaseException as exc:
+            error.append(exc)
+
+    thread = threading.Thread(target=runner)
+    thread.start()
+    thread.join()
+    if error:
+        raise error[0]
+    return result
+
+
+def _document_to_markdown(document: object) -> str:
+    text = getattr(document, "text", None)
+    if isinstance(text, str):
+        return text
+    text_resource = getattr(document, "text_resource", None)
+    resource_text = getattr(text_resource, "text", None)
+    if isinstance(resource_text, str):
+        return resource_text
+    return str(document)
 
 
 def _extract_epub_text(content: bytes) -> str:

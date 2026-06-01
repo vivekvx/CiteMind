@@ -13,6 +13,7 @@ from backend.app.schemas.query import QueryCitation, QueryRequest, QueryResponse
 from backend.app.agent.planner import run_research_agent
 from backend.app.services.answer_generator import generate_answer_result
 from backend.app.services.page_index import retrieve_page_index_records
+from backend.app.services.reranker import rerank_with_optional_flashrank
 
 
 router = APIRouter(prefix="/query", tags=["query"], dependencies=[Depends(enforce_rate_limit)])
@@ -35,6 +36,8 @@ def query_documents(
     retrieval_comparison = {
         "baseline_chunks": len(records),
         "pageindex_chunks": 0,
+        "reranker_input_chunks": 0,
+        "reranked_chunks": 0,
     }
 
     if get_settings().retrieval_mode == "pageindex":
@@ -59,6 +62,29 @@ def query_documents(
             result.state.used_llm = used_llm
             records = page_index_records
             retrieval_strategy = "pageindex"
+    elif get_settings().reranker_mode == "flashrank":
+        reranked_records, reranker_metadata = rerank_with_optional_flashrank(
+            request.query,
+            records,
+            get_settings().reranker_final_k,
+        )
+        retrieval_comparison["reranker_input_chunks"] = int(
+            reranker_metadata["reranker_input_chunks"]
+        )
+        retrieval_comparison["reranked_chunks"] = int(reranker_metadata["reranked_chunks"])
+        if reranked_records:
+            answer, used_llm = generate_answer_result(
+                request.query,
+                reranked_records,
+                result.state.intent,
+                result.state.requested_count,
+                result.state.word_limit,
+            )
+            result.answer = answer
+            result.state.retrieved_chunks = reranked_records
+            result.state.used_llm = used_llm
+            records = reranked_records
+            retrieval_strategy = str(reranker_metadata["strategy"])
 
     query_id = _save_query_log(db, request.query, result.answer)
 

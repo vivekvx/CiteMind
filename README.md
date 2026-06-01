@@ -21,6 +21,9 @@ The public app uses one website. API requests are served through the frontend do
 - Upload PDF, EPUB, Markdown, or text documents.
 - Ask questions against the selected document.
 - Generate cited answers for summaries, topics, study notes, flashcards, comparisons, definitions, and Q&A.
+- Handle section-title lookups and first-mention questions while filtering table-of-contents and page-marker noise.
+- Optionally rerank broad vector candidates with FlashRank for harder context lookups.
+- Optionally parse complex PDFs through LlamaParse Markdown extraction.
 - Show retrieved chunks so answers can be audited.
 - Run evaluation for faithfulness, answer relevance, context relevance, and citation coverage.
 - Reset the local demo to the bundled `sample_docs/sample_ai_report.md`.
@@ -51,7 +54,7 @@ flowchart LR
 
 - Frontend: Next.js, React, TypeScript, Tailwind CSS.
 - Backend: FastAPI, SQLAlchemy, Pydantic.
-- Retrieval: persisted chunks, deterministic embeddings, hydrated in-memory vector index.
+- Retrieval: persisted chunks, deterministic embeddings, hydrated in-memory vector index, section lookup, first-mention retrieval, and optional FlashRank reranking.
 - Storage: SQLite locally, Postgres-compatible `DATABASE_URL` for hosted persistence.
 - LLM: OpenAI-compatible chat providers through `LLM_*` or `OPENAI_*`.
 - Deployment: Vercel frontend and Vercel Python backend.
@@ -113,6 +116,20 @@ BACKEND_API_URL=
 MAX_UPLOAD_BYTES=10000000
 RATE_LIMIT_ENABLED=true
 RATE_LIMIT_REQUESTS_PER_MINUTE=20
+
+RETRIEVAL_MODE=vector
+PAGE_INDEX_MIN_CHUNKS=8
+RERANKER_MODE=none
+RERANKER_TOP_K=30
+RERANKER_FINAL_K=5
+DOCUMENT_PARSER=pymupdf
+LLAMA_CLOUD_API_KEY=
+```
+
+Optional retrieval and parsing extras are kept out of the base install. Install them only when enabling the related flags:
+
+```bash
+backend/.venv/bin/pip install -r requirements-optional.txt
 ```
 
 For local frontend runs, create `frontend/.env.local`:
@@ -202,7 +219,7 @@ If `ok` is `false`, check `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_CHAT_MODEL`, provi
 Backend:
 
 ```bash
-PYTHONPYCACHEPREFIX=/private/tmp/citemind-pycache backend/.venv/bin/python -m compileall api backend/__init__.py backend/app
+PYTHONPYCACHEPREFIX=/private/tmp/citemind-pycache backend/.venv/bin/python -m compileall backend/__init__.py backend/app
 backend/.venv/bin/python -m unittest backend.app.tests.test_regressions
 backend/.venv/bin/python -c "from backend.app.main import app; print(app.title)"
 ```
@@ -241,9 +258,16 @@ LLM_CHAT_MODEL=openrouter/free
 MAX_UPLOAD_BYTES=10000000
 RATE_LIMIT_ENABLED=true
 RATE_LIMIT_REQUESTS_PER_MINUTE=20
+RETRIEVAL_MODE=vector
+PAGE_INDEX_MIN_CHUNKS=8
+RERANKER_MODE=none
+RERANKER_TOP_K=30
+RERANKER_FINAL_K=5
+DOCUMENT_PARSER=pymupdf
+LLAMA_CLOUD_API_KEY=
 ```
 
-If hosted Postgres is not configured, Vercel uploads are demo-only because serverless filesystem storage is temporary.
+If hosted Postgres is not configured, the backend reports degraded health on Vercel and blocks uploads, queries, deletes, and evaluation writes instead of relying on temporary serverless filesystem storage.
 
 ## Project Status
 
@@ -251,6 +275,9 @@ Implemented:
 
 - Document ingestion, chunk persistence, deduplication, and deletion.
 - Document-scoped retrieval with deterministic local embeddings.
+- Robust retrieval for section-title lookups and first-mention questions.
+- Optional two-stage FlashRank reranking behind `RERANKER_MODE=flashrank`.
+- Optional LlamaParse PDF ingestion behind `DOCUMENT_PARSER=llama_parse`.
 - Optional LLM synthesis with local fallback behavior.
 - Inline citations, retrieved chunk display, and evaluation cards.
 - Docker Compose and Vercel deployment support.

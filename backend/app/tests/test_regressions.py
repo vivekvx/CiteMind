@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from asyncio import run
 from io import BytesIO
+from unittest.mock import patch
 
 from fastapi import HTTPException, UploadFile
 
@@ -34,6 +35,8 @@ from backend.app.routes.health import health_check, llm_health_check
 from backend.app.routes.query import query_documents
 from backend.app.schemas.eval import EvalRunRequest
 from backend.app.schemas.query import QueryRequest
+from backend.app.services import document_loader
+from backend.app.services import reranker as reranker_module
 from backend.app.services.document_loader import load_document_content
 from backend.app.services.embeddings import embed_chunks
 from backend.app.services.evaluator import evaluate
@@ -59,6 +62,11 @@ class CiteMindRegressionTests(unittest.TestCase):
         settings.llm_base_url = None
         settings.llm_chat_model = None
         settings.retrieval_mode = "vector"
+        settings.reranker_mode = "none"
+        settings.reranker_top_k = 30
+        settings.reranker_final_k = 5
+        settings.document_parser = "pymupdf"
+        settings.llama_cloud_api_key = None
         settings.page_index_min_chunks = 8
         settings.max_upload_bytes = 10_000_000
         settings.rate_limit_enabled = True
@@ -105,6 +113,15 @@ class CiteMindRegressionTests(unittest.TestCase):
         self.assertIn("content_hash", document_columns)
         self.assertIn("page_index_tree_json", document_columns)
         self.assertIn("embedding_json", chunk_columns)
+
+    def test_retrieval_feature_defaults_are_opted_out(self) -> None:
+        settings = get_settings()
+
+        self.assertEqual(settings.reranker_mode, "none")
+        self.assertEqual(settings.reranker_top_k, 30)
+        self.assertEqual(settings.reranker_final_k, 5)
+        self.assertEqual(settings.document_parser, "pymupdf")
+        self.assertIsNone(settings.llama_cloud_api_key)
 
     def test_local_database_status_allows_sqlite_for_development(self) -> None:
         status = database_status()
@@ -514,6 +531,104 @@ class CiteMindRegressionTests(unittest.TestCase):
         )
         self.assertNotIn("Table of Contents", answer)
         self.assertIn("[Document 7, chunk 2]", answer)
+
+    def test_flashrank_mode_reranks_broad_vector_candidates_and_reports_counts(self) -> None:
+        settings = get_settings()
+        settings.reranker_mode = "flashrank"
+        settings.reranker_top_k = 30
+        settings.reranker_final_k = 2
+        content = (
+            b"Table of Contents\nAgent Memory ........ 9\nAgent Safety ........ 12\n\n"
+            + b"Agent memory stores durable user preferences for later tasks. " * 40
+            + b"Agent safety validates tool calls before execution. " * 40
+        )
+
+        class FakeRanker:
+            def rerank(self, query: str, records: list[VectorRecord], top_n: int) -> list[VectorRecord]:
+                return sorted(
+                    records,
+                    key=lambda record: (
+                        "durable user preferences" not in record.text,
+                        "Table of Contents" in record.text,
+                        record.chunk_index,
+                    ),
+                )[:top_n]
+
+        with patch.object(reranker_module, "_get_flashrank_ranker", return_value=FakeRanker()):
+            with SessionLocal() as db:
+                uploaded = run(
+                    upload_document(
+                        UploadFile(filename="agents.md", file=BytesIO(content)),
+                        db,
+                    )
+                )
+                response = query_documents(
+                    QueryRequest(
+                        query="Where does the document discuss durable user preferences?",
+                        document_ids=[uploaded.id],
+                    ),
+                    db,
+                )
+
+        self.assertEqual(response.retrieval_strategy, "flashrank")
+        self.assertGreater(response.retrieval_comparison["baseline_chunks"], 0)
+        self.assertGreater(response.retrieval_comparison["reranker_input_chunks"], 0)
+        self.assertEqual(response.retrieval_comparison["reranked_chunks"], 2)
+        self.assertLessEqual(response.retrieved_chunk_count, 2)
+        self.assertIn("durable user preferences", response.retrieved_chunks[0].text)
+        self.assertNotIn("Table of Contents", response.retrieved_chunks[0].text)
+
+    def test_flashrank_missing_package_falls_back_without_crashing(self) -> None:
+        settings = get_settings()
+        settings.reranker_mode = "flashrank"
+
+        with patch.object(reranker_module, "_get_flashrank_ranker", return_value=None):
+            records = [
+                VectorRecord(1, 0, "Table of Contents\nAgent Memory ........ 9", [1.0, 0.0]),
+                VectorRecord(1, 1, "Agent memory stores durable user preferences.", [0.9, 0.1]),
+            ]
+            reranked, metadata = reranker_module.rerank_with_optional_flashrank(
+                "durable user preferences",
+                records,
+                1,
+            )
+
+        self.assertEqual(reranked, records[:1])
+        self.assertEqual(metadata["strategy"], "vector")
+        self.assertEqual(metadata["reranked_chunks"], 0)
+
+    def test_llama_parse_requires_api_key_when_enabled(self) -> None:
+        settings = get_settings()
+        settings.document_parser = "llama_parse"
+        settings.llama_cloud_api_key = None
+
+        with self.assertRaises(HTTPException) as error:
+            load_document_content(b"%PDF-1.4 fake", "paper.pdf")
+
+        self.assertEqual(error.exception.status_code, 400)
+        self.assertIn("LLAMA_CLOUD_API_KEY", error.exception.detail)
+
+    def test_llama_parse_markdown_output_flows_into_document_loader(self) -> None:
+        settings = get_settings()
+        settings.document_parser = "llama_parse"
+        settings.llama_cloud_api_key = "test-key"
+
+        class FakeParsedDocument:
+            text = "# Main Heading\n\nParsed table content and credits."
+
+        class FakeParser:
+            def __init__(self, api_key: str, result_type: str) -> None:
+                self.api_key = api_key
+                self.result_type = result_type
+
+            async def aload_data(self, file_path: str) -> list[FakeParsedDocument]:
+                return [FakeParsedDocument()]
+
+        with patch.object(document_loader, "LlamaParse", FakeParser):
+            text = load_document_content(b"%PDF-1.4 fake", "paper.pdf")
+
+        self.assertIn("# Main Heading", text)
+        self.assertIn("Parsed table content", text)
 
     def test_summary_query_preserves_word_limit_and_uses_smaller_context(self) -> None:
         content = (

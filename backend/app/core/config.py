@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "citemind_chunks"
     retrieval_mode: str = "vector"
+    reranker_mode: str = "none"
+    reranker_top_k: int = 30
+    reranker_final_k: int = 5
+    document_parser: str = "pymupdf"
+    llama_cloud_api_key: Optional[str] = None
     page_index_min_chunks: int = 8
     max_upload_bytes: int = 10_000_000
     rate_limit_enabled: bool = True
