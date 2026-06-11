@@ -1,14 +1,12 @@
 # CiteMind
 
-CiteMind is a citation-first AI research assistant for document Q&A, summaries, and lightweight RAG evaluation. It combines a Next.js interface with a FastAPI retrieval backend, persisted document chunks, optional OpenAI-compatible LLM synthesis, and visible answer-quality metrics.
+CiteMind is a citation-first AI research assistant that combines document Q&A with **MedContradict** — a medical literature contradiction detection engine. Upload papers, ask questions with cited answers, and automatically detect when studies reach conflicting conclusions.
 
 ## Live Demo
 
 - App: https://citemind-six.vercel.app
-- Status page: https://citemind-six.vercel.app/status
-- Health check: https://citemind-six.vercel.app/api/health
-
-The public app uses one website. API requests are served through the frontend domain under `/api/*`, and `/status` provides a human-readable health view.
+- Status: https://citemind-six.vercel.app/status
+- Health: https://citemind-six.vercel.app/api/health
 
 ## Screenshots
 
@@ -16,80 +14,114 @@ The public app uses one website. API requests are served through the frontend do
 
 ![CiteMind retrieved chunks and evaluation score cards](docs/images/citemind-evaluation.png)
 
-## What It Does
+## Features
 
-- Upload PDF, EPUB, Markdown, or text documents.
-- Ask questions against the selected document.
-- Generate cited answers for summaries, topics, study notes, flashcards, comparisons, definitions, and Q&A.
-- Handle section-title lookups and first-mention questions while filtering table-of-contents and page-marker noise.
-- Optionally rerank broad vector candidates with FlashRank for harder context lookups.
-- Optionally parse complex PDFs through LlamaParse Markdown extraction.
-- Show retrieved chunks so answers can be audited.
-- Run evaluation for faithfulness, answer relevance, context relevance, and citation coverage.
-- Reset the local demo to the bundled `sample_docs/sample_ai_report.md`.
+### Research Assistant
+- Upload PDF, EPUB, Markdown, or text documents
+- Ask questions with inline citations and source chunks
+- Generate summaries, study notes, flashcards, comparisons, and definitions
+- Section-title lookups and first-mention retrieval
+- Optional FlashRank reranking and LlamaParse PDF extraction
+- Faithfulness, relevance, and citation coverage evaluation
+
+### MedContradict — Contradiction Detection
+- **Claim extraction** — LLM-powered extraction of drug, condition, direction, study type, sample size, and effect size from medical papers
+- **Contradiction detection** — pairwise comparison across documents for opposing findings on the same drug–condition pair
+- **GRADE evidence grading** — meta-analysis (5) > RCT (4) > cohort (3) > case-control (2) > case series (1), with sample-size bonus
+- **Contradiction types** — DIRECT, METHODOLOGICAL, PARTIAL, TEMPORAL
+- **Severity scoring** — HIGH (RCT/meta-analysis involved), MEDIUM, LOW
+- **LLM explanations** — per-contradiction reasoning for why studies diverge
+- **Consensus generation** — evidence-weighted summary per drug–condition pair
+- **Dark-theme UI** — side-by-side claim cards, evidence bars, severity badges, expandable explanations
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    A["Next.js UI on one public domain"] --> B["/api/* rewrite"]
-    B --> C["FastAPI backend"]
-    C --> D["Document loader"]
-    D --> E["Chunk store"]
-    E --> F["SQLite or Postgres"]
-    E --> G["In-memory vector index"]
-    C --> H["Intent router"]
-    H --> I["Retriever"]
-    I --> G
-    I --> E
-    H --> J["Answer generator"]
-    J --> K["OpenAI-compatible LLM"]
-    J --> L["Local fallback"]
-    H --> M["Evaluator"]
-    M --> K
-    M --> L
+    subgraph Frontend
+        A[Next.js App Router] --> B[Research UI]
+        A --> C[Contradiction UI]
+    end
+    subgraph Backend
+        D[FastAPI]
+        D --> E[Document Loader]
+        D --> F[Intent Router]
+        D --> G[Medical Routes]
+    end
+    subgraph Storage
+        H[SQLite / Postgres]
+        I[Qdrant Vector DB]
+    end
+    subgraph Medical Pipeline
+        G --> J[Extractor]
+        J --> K[Detector]
+        K --> L[Grader]
+        L --> M[Explainer]
+    end
+    subgraph LLM
+        N[Ollama]
+        O[OpenAI]
+        P[OpenRouter]
+    end
+    B --> D
+    C --> D
+    E --> H
+    E --> I
+    F --> I
+    J --> N
+    J --> O
+    J --> P
 ```
 
 ### Components
 
-- Frontend: Next.js, React, TypeScript, Tailwind CSS.
-- Backend: FastAPI, SQLAlchemy, Pydantic.
-- Retrieval: persisted chunks, deterministic embeddings, hydrated in-memory vector index, section lookup, first-mention retrieval, and optional FlashRank reranking.
-- Storage: SQLite locally, Postgres-compatible `DATABASE_URL` for hosted persistence.
-- LLM: OpenAI-compatible chat providers through `LLM_*` or `OPENAI_*`.
-- Deployment: Vercel frontend and Vercel Python backend.
+| Layer | Stack |
+|-------|-------|
+| Frontend | Next.js 16, React, TypeScript, Tailwind CSS v4 |
+| Backend | FastAPI, SQLAlchemy, Pydantic |
+| Embeddings | BGE-M3 via sentence-transformers (1024-dim) |
+| Vector DB | Qdrant |
+| LLM | Ollama → OpenAI → OpenRouter fallback chain |
+| Storage | SQLite (local), Postgres (hosted) |
 
 ## Quick Start
 
-Install backend dependencies:
+### Prerequisites
+
+- Python 3.9+
+- Node.js 18+
+- Docker (for Qdrant + Ollama)
+
+### Setup
 
 ```bash
-cd CiteMind/backend
+# Clone
+git clone https://github.com/vivekvx/CiteMind.git
+cd CiteMind
+
+# Backend
+cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r ../requirements.txt
-```
 
-Install frontend dependencies:
-
-```bash
+# Frontend
 cd ../frontend
 npm install
-```
 
-Run the app:
-
-```bash
+# Infrastructure
 cd ..
+docker compose up qdrant ollama -d
+
+# Run
 ./dev.sh
 ```
 
 Local URLs:
-
 - Frontend: `http://localhost:3001`
 - Backend docs: `http://localhost:8001/docs`
 
-Docker:
+### Docker
 
 ```bash
 docker compose up --build
@@ -97,196 +129,132 @@ docker compose up --build
 
 ## Configuration
 
-Copy `.env.example` to `.env` and configure only what you need.
+Copy `.env.example` to `.env`:
 
 ```bash
-DATABASE_URL=sqlite:///./citemind.db
-
-LLM_API_KEY=
-LLM_BASE_URL=
-LLM_CHAT_MODEL=
-
-OPENAI_API_KEY=
-OPENAI_CHAT_MODEL=gpt-4o-mini
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-
-NEXT_PUBLIC_API_URL=http://localhost:8001
-BACKEND_API_URL=
-
-MAX_UPLOAD_BYTES=10000000
-RATE_LIMIT_ENABLED=true
-RATE_LIMIT_REQUESTS_PER_MINUTE=20
-
-RETRIEVAL_MODE=vector
-PAGE_INDEX_MIN_CHUNKS=8
-RERANKER_MODE=none
-RERANKER_TOP_K=30
-RERANKER_FINAL_K=5
-DOCUMENT_PARSER=pymupdf
-LLAMA_CLOUD_API_KEY=
+cp .env.example .env
 ```
 
-Optional retrieval and parsing extras are kept out of the base install. Install them only when enabling the related flags:
+Key settings:
 
-```bash
-backend/.venv/bin/pip install -r requirements-optional.txt
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_PROVIDER` | `auto` | `auto`, `ollama`, `openai`, or `openrouter` |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Local Ollama endpoint |
+| `OLLAMA_MODEL` | `llama3.2` | Ollama model name |
+| `OPENAI_API_KEY` | — | OpenAI API key |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key |
+| `DATABASE_URL` | `sqlite:///./citemind.db` | SQLAlchemy connection string |
+| `QDRANT_URL` | `http://localhost:6333` | Qdrant vector DB endpoint |
+| `RETRIEVAL_MODE` | `vector` | `vector` or `page_index` |
+| `RERANKER_MODE` | `none` | `none` or `flashrank` |
+| `DOCUMENT_PARSER` | `markitdown` | `markitdown`, `pymupdf`, or `llama_parse` |
 
-For local frontend runs, create `frontend/.env.local`:
+For frontend, create `frontend/.env.local`:
 
 ```bash
 NEXT_PUBLIC_API_URL=http://localhost:8001
 ```
-
-For Vercel deployments:
-
-```bash
-NEXT_PUBLIC_API_URL=/api
-BACKEND_API_URL=<deployed-backend-url>
-```
-
-With this setup, browser traffic stays on the frontend domain while Next.js rewrites `/api/*` requests to the backend service.
-
-For hosted persistence:
-
-```bash
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
-```
-
-Do not commit real `.env` files or API keys.
 
 ## LLM Providers
 
-`LLM_*` settings take precedence over the legacy `OPENAI_*` settings, so the backend can use OpenRouter, DeepSeek, OpenAI, or another OpenAI-compatible chat endpoint without code changes.
+The LLM client tries providers in order: Ollama → OpenAI → OpenRouter. Set `LLM_PROVIDER` to force a specific one.
 
-OpenRouter:
-
+**OpenRouter:**
 ```bash
-LLM_BASE_URL=https://openrouter.ai/api/v1
-LLM_API_KEY=<your-openrouter-key>
-LLM_CHAT_MODEL=openrouter/free
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=<key>
 ```
 
-DeepSeek:
-
+**OpenAI:**
 ```bash
-LLM_BASE_URL=https://api.deepseek.com
-LLM_API_KEY=<your-deepseek-key>
-LLM_CHAT_MODEL=deepseek-chat
+LLM_PROVIDER=openai
+OPENAI_API_KEY=<key>
+OPENAI_CHAT_MODEL=gpt-4o-mini
 ```
 
-Local verification flow:
-
+**Local Ollama:**
 ```bash
-cd /Users/vivek/CiteMind
-backend/.venv/bin/python -m uvicorn backend.app.main:app --port 8001
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
 ```
-
-In another terminal:
-
-```bash
-curl http://localhost:8001/health/llm
-```
-
-Expected shape when the provider is reachable:
-
-```json
-{
-  "configured": true,
-  "ok": true,
-  "model": "deepseek-chat",
-  "base_url": "https://api.deepseek.com",
-  "chat_completions_url": "https://api.deepseek.com/chat/completions",
-  "sample": "OK"
-}
-```
-
-If `ok` is `false`, check `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_CHAT_MODEL`, provider billing/quota, and rate limits.
 
 ## API
 
-- `GET /health`
-- `GET /health/llm`
-- `POST /documents/upload`
-- `POST /documents/demo/reset`
-- `GET /documents`
-- `DELETE /documents/{document_id}`
-- `POST /query`
-- `POST /evals/run`
+### Documents & Research
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `GET` | `/health/llm` | LLM provider status |
+| `POST` | `/documents/upload` | Upload document |
+| `GET` | `/documents` | List documents |
+| `DELETE` | `/documents/{id}` | Delete document |
+| `POST` | `/query` | Ask question with citations |
+| `POST` | `/evals/run` | Run evaluation |
 
-## Verification
+### MedContradict
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/medical/extract/{doc_id}` | Extract claims from document |
+| `GET` | `/medical/claims/{doc_id}` | Get claims for document |
+| `POST` | `/medical/analyze` | Run contradiction analysis |
+| `GET` | `/medical/analysis/{job_id}` | Get analysis results |
+| `POST` | `/medical/explain/{id}` | Explain a contradiction |
 
-Backend:
-
-```bash
-PYTHONPYCACHEPREFIX=/private/tmp/citemind-pycache backend/.venv/bin/python -m compileall backend/__init__.py backend/app
-backend/.venv/bin/python -m unittest backend.app.tests.test_regressions
-backend/.venv/bin/python -c "from backend.app.main import app; print(app.title)"
-```
-
-Frontend:
-
-```bash
-cd frontend
-npm run build
-```
-
-Formatting:
+## Testing
 
 ```bash
-cd ..
-git diff --check
+# Unit tests
+backend/.venv/bin/python -m pytest tests/medical/
+
+# TypeScript check
+cd frontend && npx tsc --noEmit
+
+# End-to-end eval
+bash scripts/demo_medcontradict.sh
 ```
+
+The eval script uploads fixture papers (statin RCT vs cohort, metformin meta-analysis), runs extraction and contradiction detection, and reports precision/recall against ground truth.
 
 ## Deployment
 
-Current Vercel deployment:
+**Vercel:**
+- Frontend: `https://citemind-six.vercel.app`
+- Backend: `https://citemind-api.vercel.app`
 
-- Public app: `https://citemind-six.vercel.app`
-- API from the same public domain: `https://citemind-six.vercel.app/api/health`
-- Backend service: `https://citemind-api.vercel.app`
+Set `NEXT_PUBLIC_API_URL=/api` and `BACKEND_API_URL=<backend-url>` for Vercel. The frontend rewrites `/api/*` to the backend service.
 
-The backend service exists so FastAPI can run separately on Vercel, but it is not the user-facing website.
+For hosted persistence, set `DATABASE_URL` to a Postgres connection string.
 
-Recommended backend environment:
+## Project Structure
 
-```bash
-DATABASE_URL=<hosted-postgres-url>
-LLM_API_KEY=<openrouter-or-compatible-provider-key>
-LLM_BASE_URL=https://openrouter.ai/api/v1
-LLM_CHAT_MODEL=openrouter/free
-MAX_UPLOAD_BYTES=10000000
-RATE_LIMIT_ENABLED=true
-RATE_LIMIT_REQUESTS_PER_MINUTE=20
-RETRIEVAL_MODE=vector
-PAGE_INDEX_MIN_CHUNKS=8
-RERANKER_MODE=none
-RERANKER_TOP_K=30
-RERANKER_FINAL_K=5
-DOCUMENT_PARSER=pymupdf
-LLAMA_CLOUD_API_KEY=
+```
+backend/app/
+├── core/           # Config, rate limiting
+├── db/             # SQLAlchemy setup
+├── models/         # ORM models (Document, MedicalClaim, Contradiction, AnalysisJob)
+├── routes/         # FastAPI routers (documents, chat, eval, medical)
+├── services/       # Embeddings, vector store, document loader, chunker, LLM client
+├── schemas/        # Pydantic schemas
+└── medical/        # MedContradict module
+    ├── extractor.py    # Claim extraction from chunks
+    ├── detector.py     # Pairwise contradiction detection
+    ├── grader.py       # GRADE evidence scoring
+    ├── explainer.py    # LLM explanation + consensus
+    ├── prompts.py      # Prompt templates
+    └── schemas.py      # ClaimOut, ContradictionOut, ContradictionReport
+
+frontend/
+├── app/
+│   ├── contradictions/  # MedContradict analysis page
+│   └── ...              # Research pages
+├── components/
+│   └── medical/         # EvidenceBar, ContradictionCard, DocumentSelector
+└── lib/
+    └── medical-api.ts   # Typed API client
 ```
 
-If hosted Postgres is not configured, the backend reports degraded health on Vercel and blocks uploads, queries, deletes, and evaluation writes instead of relying on temporary serverless filesystem storage.
+## License
 
-## Project Status
-
-Implemented:
-
-- Document ingestion, chunk persistence, deduplication, and deletion.
-- Document-scoped retrieval with deterministic local embeddings.
-- Robust retrieval for section-title lookups and first-mention questions.
-- Optional two-stage FlashRank reranking behind `RERANKER_MODE=flashrank`.
-- Optional LlamaParse PDF ingestion behind `DOCUMENT_PARSER=llama_parse`.
-- Optional LLM synthesis with local fallback behavior.
-- Inline citations, retrieved chunk display, and evaluation cards.
-- Docker Compose and Vercel deployment support.
-- Basic rate limiting for costly public routes.
-
-Next improvements:
-
-- Move public demo persistence to hosted Postgres.
-- Add Alembic migrations.
-- Add account-level auth before broad public release.
-- Compare Qdrant and PageIndex retrieval against the current baseline.
-- Add CI for backend tests and frontend builds.
+See [LICENSE](LICENSE).
