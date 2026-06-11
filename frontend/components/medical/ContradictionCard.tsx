@@ -124,13 +124,25 @@ export function ContradictionCard({
       </div>
 
       <div className="flex flex-col gap-3 p-5 md:flex-row">
-        <ClaimSide claim={contradiction.claim_a} side="A" />
+        {contradiction.claim_a ? (
+          <ClaimSide claim={contradiction.claim_a} side="A" />
+        ) : (
+          <div className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.025] p-4 text-xs text-zinc-500">
+            Claim A unavailable
+          </div>
+        )}
         <div className="flex items-center justify-center md:px-1">
           <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.04] text-xs font-bold text-zinc-500">
             VS
           </div>
         </div>
-        <ClaimSide claim={contradiction.claim_b} side="B" />
+        {contradiction.claim_b ? (
+          <ClaimSide claim={contradiction.claim_b} side="B" />
+        ) : (
+          <div className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.025] p-4 text-xs text-zinc-500">
+            Claim B unavailable
+          </div>
+        )}
       </div>
 
       <div className="border-t border-white/[0.06]">
