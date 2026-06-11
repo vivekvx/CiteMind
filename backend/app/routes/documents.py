@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,7 @@ from backend.app.models.document_chunk import DocumentChunk
 from backend.app.models.eval_result import EvalResult
 from backend.app.models.query_log import QueryLog
 from backend.app.schemas.document import DocumentListItem, DocumentUploadResponse
-from backend.app.services.chunker import chunk_text
+from backend.app.services.chunker import chunk_markdown, chunk_text
 from backend.app.services.document_loader import load_document_content
 from backend.app.services.embeddings import embed_chunks
 from backend.app.services.page_index import build_page_index_tree
@@ -30,6 +30,7 @@ SAMPLE_DOCUMENT_PATH = Path(__file__).resolve().parents[3] / "sample_docs" / "sa
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db),
     _: None = Depends(enforce_rate_limit),
 ) -> DocumentUploadResponse:
@@ -38,7 +39,22 @@ async def upload_document(
     content = await file.read()
     if len(content) > get_settings().max_upload_bytes:
         raise HTTPException(status_code=413, detail="Uploaded file is too large.")
-    return _store_document_content(db, title, content)
+    result = _store_document_content(db, title, content)
+    background_tasks.add_task(_run_extraction, result.id)
+    return result
+
+
+def _run_extraction(document_id: int) -> None:
+    from backend.app.db.database import SessionLocal
+    from backend.app.medical.extractor import extract_claims
+    from backend.app.services.llm_client import LLMClient
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        with SessionLocal() as session:
+            extract_claims(document_id, session, LLMClient())
+    except Exception as exc:
+        logger.warning("Background extraction failed doc %d: %s", document_id, exc)
 
 
 @router.post("/demo/reset", response_model=DocumentUploadResponse)
@@ -93,7 +109,8 @@ def _store_document_content(
         )
 
     text = load_document_content(content, title)
-    chunks = chunk_text(text)
+    use_markdown_chunking = get_settings().document_parser in ("markitdown", "llama_parse")
+    chunks = chunk_markdown(text) if use_markdown_chunking else chunk_text(text)
     embeddings = embed_chunks(chunks)
     existing_document = existing_document or _find_document_by_chunks(db, chunks)
 
@@ -218,4 +235,4 @@ def _should_store_page_index_tree(title: str, chunks: list[str]) -> bool:
         return False
     if len(chunks) < settings.page_index_min_chunks:
         return False
-    return title.lower().endswith((".pdf", ".md", ".markdown", ".txt"))
+    return title.lower().endswith((".pdf", ".md", ".markdown", ".txt", ".docx", ".pptx", ".epub"))

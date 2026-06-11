@@ -6,6 +6,7 @@ import threading
 import zipfile
 from html.parser import HTMLParser
 from io import BytesIO
+from pathlib import Path
 from typing import Optional
 
 import fitz
@@ -14,9 +15,22 @@ from fastapi import HTTPException, UploadFile
 from backend.app.core.config import get_settings
 
 try:
+    from markitdown import MarkItDown
+except ImportError:
+    MarkItDown = None  # type: ignore[assignment,misc]
+
+try:
     from llama_parse import LlamaParse
 except ImportError:
     LlamaParse = None  # type: ignore[assignment]
+
+
+MARKITDOWN_EXTENSIONS = {
+    ".pdf", ".docx", ".pptx", ".xlsx", ".xls",
+    ".html", ".htm", ".csv", ".json", ".xml",
+    ".zip", ".mp3", ".wav", ".m4a",
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff",
+}
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -38,6 +52,34 @@ class _HTMLTextExtractor(HTMLParser):
             self.parts.append(data.strip())
 
 
+def _convert_with_markitdown(content: bytes, filename: str) -> str:
+    if MarkItDown is None:
+        raise HTTPException(
+            status_code=400,
+            detail="markitdown is not installed. Run: pip install 'markitdown[all]'",
+        )
+
+    suffix = Path(filename).suffix.lower() or ".pdf"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        tmp.flush()
+        tmp_path = tmp.name
+
+    try:
+        md = MarkItDown()
+        result = md.convert(tmp_path)
+        text = result.text_content or ""
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"MarkItDown could not process this {suffix} file.",
+        ) from exc
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+    return _clean_extracted_text(text)
+
+
 def _extract_document_text(content: bytes, filetype: str) -> str:
     try:
         with fitz.open(stream=content, filetype=filetype) as document:
@@ -57,8 +99,13 @@ def _extract_document_text(content: bytes, filetype: str) -> str:
     return _clean_extracted_text(text)
 
 
-def _extract_pdf_text(content: bytes) -> str:
-    if get_settings().document_parser == "llama_parse":
+def _extract_pdf_text(content: bytes, filename: str) -> str:
+    parser = get_settings().document_parser
+
+    if parser == "markitdown":
+        return _convert_with_markitdown(content, filename)
+
+    if parser == "llama_parse":
         return _extract_pdf_markdown_with_llama_parse(content)
 
     text = _extract_document_text(content, "pdf")
@@ -139,6 +186,12 @@ def _document_to_markdown(document: object) -> str:
 
 
 def _extract_epub_text(content: bytes) -> str:
+    settings = get_settings()
+    if settings.document_parser == "markitdown" and MarkItDown is not None:
+        text = _convert_with_markitdown(content, "document.epub")
+        if text and not _looks_like_raw_epub(content, text):
+            return text
+
     try:
         text = _extract_document_text(content, "epub")
     except HTTPException:
@@ -215,10 +268,27 @@ def _ensure_readable_text(text: str) -> str:
 
 def load_document_content(content: bytes, filename: str) -> str:
     lower_filename = filename.lower()
+    suffix = Path(lower_filename).suffix
+
     if lower_filename.endswith(".pdf"):
-        return _ensure_readable_text(_extract_pdf_text(content))
+        return _ensure_readable_text(_extract_pdf_text(content, filename))
+
     if lower_filename.endswith(".epub"):
         return _ensure_readable_text(_extract_epub_text(content))
+
+    if suffix in MARKITDOWN_EXTENSIONS and get_settings().document_parser == "markitdown":
+        text = _convert_with_markitdown(content, filename)
+        if text:
+            return _ensure_readable_text(text)
+
+    if lower_filename.endswith((".md", ".txt", ".text")):
+        return _ensure_readable_text(content.decode("utf-8", errors="ignore"))
+
+    if get_settings().document_parser == "markitdown" and MarkItDown is not None:
+        text = _convert_with_markitdown(content, filename)
+        if text:
+            return _ensure_readable_text(text)
+
     return _ensure_readable_text(content.decode("utf-8", errors="ignore"))
 
 
