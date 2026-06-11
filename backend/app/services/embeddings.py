@@ -1,10 +1,24 @@
-import hashlib
+import logging
+
+logger = logging.getLogger(__name__)
+_model = None
 
 
-def embed_text(text: str, dimensions: int = 16) -> list[float]:
-    digest = hashlib.sha256(text.encode("utf-8")).digest()
-    return [digest[index] / 255 for index in range(dimensions)]
+def _get_model():
+    global _model
+    if _model is None:
+        from sentence_transformers import SentenceTransformer
+        logger.info("Loading BGE-M3 embedding model (first load may take a minute)...")
+        _model = SentenceTransformer("BAAI/bge-m3")
+        logger.info("BGE-M3 loaded.")
+    return _model
+
+
+def embed_text(text: str) -> list[float]:
+    return embed_chunks([text])[0]
 
 
 def embed_chunks(chunks: list[str]) -> list[list[float]]:
-    return [embed_text(chunk) for chunk in chunks]
+    if not chunks:
+        return []
+    return _get_model().encode(chunks, normalize_embeddings=True, batch_size=32).tolist()
