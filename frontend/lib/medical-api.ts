@@ -20,8 +20,8 @@ export type ClaimOut = {
 
 export type ContradictionOut = {
   id: number;
-  claim_a: ClaimOut;
-  claim_b: ClaimOut;
+  claim_a: ClaimOut | null;
+  claim_b: ClaimOut | null;
   contradiction_type: string;
   severity: string;
   explanation: string | null;

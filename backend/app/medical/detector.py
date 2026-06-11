@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.contradiction import Contradiction
@@ -14,18 +14,31 @@ _LOW_EVIDENCE = {"case_series", "unknown"}
 
 
 def detect_contradictions(document_ids: list[int], db: Session) -> list[Contradiction]:
+    claim_ids = list(
+        db.scalars(
+            select(MedicalClaim.id).where(MedicalClaim.document_id.in_(document_ids))
+        ).all()
+    )
+    if claim_ids:
+        db.execute(
+            delete(Contradiction).where(
+                (Contradiction.claim_a_id.in_(claim_ids))
+                | (Contradiction.claim_b_id.in_(claim_ids))
+            )
+        )
+        db.commit()
+
     claims = list(
         db.scalars(
             select(MedicalClaim).where(MedicalClaim.document_id.in_(document_ids))
         ).all()
     )
 
-    groups: dict[tuple[str, str, str], list[MedicalClaim]] = defaultdict(list)
+    groups: dict[tuple[str, str], list[MedicalClaim]] = defaultdict(list)
     for claim in claims:
         key = (
             claim.drug.lower().strip(),
             claim.condition.lower().strip(),
-            claim.outcome.lower().strip(),
         )
         groups[key].append(claim)
 

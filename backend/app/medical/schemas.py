@@ -25,12 +25,12 @@ class ClaimOut(BaseModel):
 
 class ContradictionOut(BaseModel):
     id: int
-    claim_a: ClaimOut
-    claim_b: ClaimOut
+    claim_a: Optional[ClaimOut] = None
+    claim_b: Optional[ClaimOut] = None
     contradiction_type: str
     severity: str
-    explanation: Optional[str]
-    consensus: Optional[str]
+    explanation: Optional[str] = None
+    consensus: Optional[str] = None
 
 
 class AnalysisReport(BaseModel):
