@@ -41,8 +41,38 @@ Keep production as a frontend demo.
 - Add a small banner on `/contradictions` when `DEMO_MODE` is active: "Demo data, self-host to analyze your own papers."
 - Cheapest. Accurate. Loses the "works on real papers" credibility the founder review asked for.
 
-## Recommendation
-Option 1 if you want it to genuinely work (best portfolio signal: "deployed a real ML backend, not just a serverless toy"). Option 3 if you want to stop spending now and be honest about scope. Avoid Option 2 unless you specifically want to keep everything on Vercel.
+## DECISION LOCKED: Option 2 (stay on Vercel, rewrite)
+
+User chose Option 2 on 2026-06-12. Execute these exact steps in a FRESH session.
+
+### Step-by-step
+
+1. **`backend/app/services/embeddings.py`** — replace BGE-M3/sentence-transformers with OpenAI embeddings API.
+   - Call `text-embedding-3-small` (1536-dim) via `httpx` POST to `https://api.openai.com/v1/embeddings` using `settings.openai_api_key`. Keep the `embed_text` / `embed_chunks` signatures unchanged so callers don't break.
+   - Batch chunks in one request; return `data[i].embedding` lists.
+   - No torch, no sentence-transformers imported anywhere.
+
+2. **`backend/app/services/vector_store.py`** — change the Qdrant collection vector size from 1024 to **1536** (text-embedding-3-small). If an old `citemind_chunks` collection exists with dim 1024, it must be recreated. Add a one-time guard that recreates the collection if the dim mismatches.
+
+3. **`requirements.txt`** — remove `sentence-transformers>=2.7.0`. Keep `httpx`, `qdrant-client`, `psycopg2-binary`. This drops torch and gets the bundle under Vercel's 250MB limit.
+
+4. **`backend/app/routes/medical.py`** — make `POST /medical/analyze` **synchronous**. Remove `BackgroundTasks` and `_run_analysis_job`; run detect -> explain -> consensus inline and return the full `AnalysisReport` directly (still persist the `AnalysisJob` row as `done` so `GET /medical/analyze/{job_id}` keeps working). Keep total LLM calls bounded; if it risks the function timeout, cap explanations to top-N contradictions.
+
+5. **`frontend/lib/medical-api.ts`** — `startAnalysis` can now return the report directly. Either: keep `pollAnalysis` (it will resolve on first poll since job is already `done`), or short-circuit when the POST response already contains the report. Simplest: have `startAnalysis` return `{job_id}` and let one poll fetch the stored `done` job.
+
+6. **Vercel env vars (user provides):**
+   - `OPENAI_API_KEY` on the `citemind-api` project (embeddings + LLM).
+   - `DATABASE_URL` = a managed Postgres URL (Neon/Supabase free tier) on `citemind-api`. Required so documents/claims/contradictions/jobs persist across lambda invocations.
+   - Confirm `LLM_PROVIDER=openai` (or `auto` with the key set).
+
+7. **CORS** in `backend/app/main.py` — ensure `allow_origins` includes `https://citemind-six.vercel.app`.
+
+8. **Redeploy `citemind-api`** (root project, `api/index.py`). Then verify end to end:
+   - `POST /documents/upload` with a real PDF -> 200
+   - `/contradictions` -> select 2 -> Analyze -> report returns, no 404/500.
+
+### Timeout watch
+Vercel hobby = 10s, pro = 60s function limit. Analysis makes multiple LLM calls. If it times out, either upgrade to pro, cap explained contradictions, or move explanation to a separate on-demand `/medical/explain/{id}` call (already exists) and return the report without inline explanations.
 
 ## Constraints (from CLAUDE.md)
 - Python binary: `backend/.venv/bin/python`
