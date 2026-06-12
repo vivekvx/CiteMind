@@ -3,12 +3,12 @@ import logging
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.db.database import get_db
+from backend.app.db.database import SessionLocal, get_db
 from backend.app.medical.detector import detect_contradictions
 from backend.app.medical.explainer import explain_contradiction, generate_consensus
 from backend.app.medical.extractor import extract_claims
@@ -69,8 +69,12 @@ def get_claims(document_id: int, db: Session = Depends(get_db)) -> list[ClaimOut
     return [_to_out(c) for c in claims]
 
 
-@router.post("/analyze", response_model=AnalysisReport)
-def analyze(body: AnalyzeRequest, db: Session = Depends(get_db)) -> AnalysisReport:
+@router.post("/analyze")
+def analyze(
+    body: AnalyzeRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> dict:
     doc_ids = body.document_ids
     if len(doc_ids) < 2:
         raise HTTPException(status_code=400, detail="At least 2 document_ids required.")
@@ -80,41 +84,52 @@ def analyze(body: AnalyzeRequest, db: Session = Depends(get_db)) -> AnalysisRepo
     db.add(job)
     db.commit()
 
+    background_tasks.add_task(_run_analysis_job, job_id, doc_ids)
+    return {"job_id": job_id, "status": "running"}
+
+
+def _run_analysis_job(job_id: str, doc_ids: list[int]) -> None:
+    db = SessionLocal()
     try:
-        contradictions = detect_contradictions(doc_ids, db)
-        all_claims = list(
-            db.scalars(
-                select(MedicalClaim).where(MedicalClaim.document_id.in_(doc_ids))
-            ).all()
-        )
-        claim_map = {c.id: _to_out(c) for c in all_claims}
+        job = db.get(AnalysisJob, job_id)
+        if not job:
+            logger.error("Job %s vanished before worker started", job_id)
+            return
+        try:
+            contradictions = detect_contradictions(doc_ids, db)
+            all_claims = list(
+                db.scalars(
+                    select(MedicalClaim).where(MedicalClaim.document_id.in_(doc_ids))
+                ).all()
+            )
+            claim_map = {c.id: _to_out(c) for c in all_claims}
+            claims_by_id = {c.id: c for c in all_claims}
 
-        for c in contradictions:
-            c.explanation = explain_contradiction(c, db, _llm)
+            for c in contradictions:
+                c.explanation = explain_contradiction(c, db, _llm)
 
-        _generate_consensus_for_contradictions(contradictions, all_claims, db)
+            _generate_consensus_for_contradictions(contradictions, all_claims, claims_by_id)
 
-        contra_out = [_contra_to_out(c, claim_map, db) for c in contradictions]
+            contra_out = [_contra_to_out(c, claim_map, claims_by_id) for c in contradictions]
 
-        report = AnalysisReport(
-            job_id=job_id,
-            document_ids=doc_ids,
-            total_claims=len(all_claims),
-            total_contradictions=len(contradictions),
-            contradictions=contra_out,
-        )
-        job.status = "done"
-        job.result_json = report.model_dump_json()
-        job.completed_at = datetime.utcnow()
-        db.commit()
-        return report
-
-    except Exception as exc:
-        logger.error("Analysis failed job %s: %s", job_id, exc)
-        job.status = "failed"
-        job.error = str(exc)
-        db.commit()
-        raise HTTPException(status_code=500, detail=str(exc))
+            report = AnalysisReport(
+                job_id=job_id,
+                document_ids=doc_ids,
+                total_claims=len(all_claims),
+                total_contradictions=len(contradictions),
+                contradictions=contra_out,
+            )
+            job.status = "done"
+            job.result_json = report.model_dump_json()
+            job.completed_at = datetime.utcnow()
+            db.commit()
+        except Exception as exc:
+            logger.error("Analysis failed job %s: %s", job_id, exc)
+            job.status = "failed"
+            job.error = str(exc)
+            db.commit()
+    finally:
+        db.close()
 
 
 @router.get("/analyze/{job_id}", response_model=AnalysisReport)
@@ -143,12 +158,12 @@ def explain(contradiction_id: int, db: Session = Depends(get_db)) -> dict:
 def _generate_consensus_for_contradictions(
     contradictions: list[Contradiction],
     all_claims: list[MedicalClaim],
-    db: Session,
+    claims_by_id: dict[int, MedicalClaim],
 ) -> None:
     groups: dict[tuple[str, str], list[int]] = {}
     for c in contradictions:
-        claim_a = db.get(MedicalClaim, c.claim_a_id)
-        claim_b = db.get(MedicalClaim, c.claim_b_id)
+        claim_a = claims_by_id.get(c.claim_a_id)
+        claim_b = claims_by_id.get(c.claim_b_id)
         if claim_a and claim_b:
             key = (claim_a.drug.lower().strip(), claim_a.condition.lower().strip())
             groups.setdefault(key, []).append(c.id)
@@ -173,15 +188,15 @@ def _generate_consensus_for_contradictions(
 def _contra_to_out(
     c: Contradiction,
     claim_map: dict[int, ClaimOut],
-    db: Session,
+    claims_by_id: dict[int, MedicalClaim],
 ) -> ContradictionOut:
     claim_a = claim_map.get(c.claim_a_id)
     claim_b = claim_map.get(c.claim_b_id)
     if not claim_a:
-        raw = db.get(MedicalClaim, c.claim_a_id)
+        raw = claims_by_id.get(c.claim_a_id)
         claim_a = _to_out(raw) if raw else None
     if not claim_b:
-        raw = db.get(MedicalClaim, c.claim_b_id)
+        raw = claims_by_id.get(c.claim_b_id)
         claim_b = _to_out(raw) if raw else None
     return ContradictionOut(
         id=c.id,

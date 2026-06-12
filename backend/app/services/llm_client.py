@@ -76,7 +76,7 @@ class LLMClient:
         return self._openai_compat(
             url="https://openrouter.ai/api/v1/chat/completions",
             api_key=settings.openrouter_api_key,
-            model="openai/gpt-4o-mini",
+            model=settings.llm_chat_model or "openai/gpt-4o-mini",
             prompt=prompt,
             system=system,
             json_mode=json_mode,

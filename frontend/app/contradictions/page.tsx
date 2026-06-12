@@ -9,6 +9,7 @@ import {
   type DocumentItem,
   explainContradiction,
   fetchDocuments,
+  pollAnalysis,
   startAnalysis,
 } from "../../lib/medical-api";
 
@@ -42,8 +43,9 @@ export default function ContradictionsPage() {
     setError("");
     setReport(null);
     try {
-      const result = await startAnalysis([...selected]);
-      setReport(result);
+      const { job_id } = await startAnalysis([...selected]);
+      const finalReport = await pollAnalysis(job_id);
+      setReport(finalReport);
       setPhase("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed.");
