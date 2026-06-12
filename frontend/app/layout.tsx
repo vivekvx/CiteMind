@@ -25,7 +25,7 @@ export default function RootLayout({
             </Link>
             <div className="flex items-center gap-1">
               <Link
-                href="/"
+                href="/research"
                 className="rounded-md px-3 py-1.5 text-xs font-medium text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200"
               >
                 Research
