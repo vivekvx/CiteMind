@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { DocumentItem } from "../../lib/medical-api";
 
 type DocumentSelectorProps = {
@@ -15,10 +16,33 @@ export function DocumentSelector({
 }: DocumentSelectorProps) {
   if (documents.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-white/[0.12] bg-white/[0.02] px-5 py-8 text-center">
-        <p className="text-sm text-zinc-500">
-          No documents uploaded yet. Upload papers from the home page first.
+      <div className="rounded-lg border border-dashed border-white/[0.12] bg-white/[0.02] px-5 py-10 text-center">
+        <svg
+          width="28"
+          height="28"
+          viewBox="0 0 24 24"
+          fill="none"
+          className="mx-auto mb-3 text-zinc-600"
+          aria-hidden="true"
+        >
+          <path
+            d="M12 16V4m0 0L8 8m4-4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <p className="text-sm font-medium text-zinc-300">No documents yet</p>
+        <p className="mt-1 text-xs text-zinc-500">
+          Upload at least two medical papers to compare their claims.
         </p>
+        <Link
+          href="/research"
+          className="mt-4 inline-block rounded-md border border-white/15 bg-white/[0.06] px-4 py-2 text-xs font-medium text-zinc-200 hover:border-white/30 hover:bg-white/[0.1]"
+        >
+          Upload papers
+        </Link>
       </div>
     );
   }
