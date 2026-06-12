@@ -1,3 +1,5 @@
+import { DEMO_DOCUMENTS, DEMO_MODE, DEMO_REPORT } from "./demo-data";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 export type ClaimOut = {
@@ -46,6 +48,7 @@ export type DocumentItem = {
 };
 
 export async function fetchDocuments(): Promise<DocumentItem[]> {
+  if (DEMO_MODE) return DEMO_DOCUMENTS;
   const res = await fetch(`${API_URL}/documents`);
   if (!res.ok) throw new Error("Failed to load documents");
   return res.json();
@@ -54,6 +57,7 @@ export async function fetchDocuments(): Promise<DocumentItem[]> {
 export async function startAnalysis(
   documentIds: number[],
 ): Promise<{ job_id: string; status: string }> {
+  if (DEMO_MODE) return { job_id: DEMO_REPORT.job_id, status: "done" };
   const res = await fetch(`${API_URL}/medical/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -71,6 +75,10 @@ export async function pollAnalysis(
   pollIntervalMs = 2000,
   maxAttempts = 300,
 ): Promise<AnalysisReport> {
+  if (DEMO_MODE) {
+    await new Promise((r) => setTimeout(r, 1500));
+    return DEMO_REPORT;
+  }
   for (let i = 0; i < maxAttempts; i++) {
     const result = await getAnalysis(jobId);
     if (result.status === "done" && result.report) return result.report;
@@ -101,6 +109,10 @@ export async function getAnalysis(jobId: string): Promise<{
 export async function explainContradiction(
   contradictionId: number,
 ): Promise<string> {
+  if (DEMO_MODE) {
+    const c = DEMO_REPORT.contradictions.find((x) => x.id === contradictionId);
+    return c?.explanation ?? "No explanation available in demo mode.";
+  }
   const res = await fetch(`${API_URL}/medical/explain/${contradictionId}`, {
     method: "POST",
   });
