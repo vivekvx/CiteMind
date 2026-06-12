@@ -148,15 +148,24 @@ export default function ContradictionsPage() {
 
         {/* Analyzing phase */}
         {phase === "analyzing" ? (
-          <section className="rounded-lg border border-white/10 bg-zinc-950/70 p-8 text-center shadow-2xl shadow-black/30 backdrop-blur">
-            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-white" />
-            <p className="text-sm font-medium text-zinc-200">
-              Analyzing {selected.size} documents...
-            </p>
-            <p className="mt-1 text-xs text-zinc-500">
-              Extracting claims, detecting contradictions, generating
-              explanations
-            </p>
+          <section className="animate-rise rounded-lg border border-white/10 bg-zinc-950/70 p-8 shadow-2xl shadow-black/30 backdrop-blur">
+            <div className="flex items-center gap-3">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-white" />
+              <div>
+                <p className="text-sm font-medium text-zinc-200">
+                  Analyzing {selected.size} documents
+                </p>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  Extracting claims, detecting contradictions, generating
+                  explanations
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 space-y-3">
+              <div className="skeleton h-16 w-full" />
+              <div className="skeleton h-16 w-4/5" />
+              <div className="skeleton h-16 w-full" />
+            </div>
           </section>
         ) : null}
 
@@ -230,12 +239,13 @@ export default function ContradictionsPage() {
             ) : (
               <div className="space-y-4">
                 {report.contradictions.map((c, i) => (
-                  <ContradictionCard
-                    key={c.id}
-                    contradiction={c}
-                    index={i}
-                    onExplain={handleExplain}
-                  />
+                  <div key={c.id} className={`animate-rise-${Math.min(i + 1, 4)}`}>
+                    <ContradictionCard
+                      contradiction={c}
+                      index={i}
+                      onExplain={handleExplain}
+                    />
+                  </div>
                 ))}
               </div>
             )}

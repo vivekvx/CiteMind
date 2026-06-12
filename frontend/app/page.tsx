@@ -28,7 +28,7 @@ export default function LandingPage() {
     <main className="min-h-screen px-4 py-10 text-zinc-100 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl space-y-16">
         {/* Hero */}
-        <section className="pt-8 text-center sm:pt-16">
+        <section className="animate-rise pt-8 text-center sm:pt-16">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
             MedContradict
           </p>
@@ -67,7 +67,7 @@ export default function LandingPage() {
             {PIPELINE_STEPS.map((step, i) => (
               <div
                 key={step.title}
-                className="rounded-lg border border-white/10 bg-white/[0.035] p-6"
+                className={`card-hover animate-rise-${i + 1} rounded-lg border border-white/10 bg-white/[0.035] p-6`}
               >
                 <div className="flex items-center gap-3">
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/[0.08] text-xs font-semibold text-zinc-300">

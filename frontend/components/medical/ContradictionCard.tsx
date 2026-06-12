@@ -108,7 +108,7 @@ export function ContradictionCard({
   }
 
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-zinc-950/60 shadow-2xl shadow-black/20 backdrop-blur">
+    <div className="card-hover rounded-xl border border-white/[0.08] bg-zinc-950/60 shadow-2xl shadow-black/20 backdrop-blur">
       <div className="flex items-center gap-3 border-b border-white/[0.06] px-5 py-3.5">
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.06] text-xs font-semibold text-zinc-400">
           {index + 1}
