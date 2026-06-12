@@ -53,7 +53,11 @@ def extract_claims(document_id: int, db: Session, llm: LLMClient) -> list[Medica
         for raw in raw_claims:
             if not isinstance(raw, dict):
                 continue
-            if float(raw.get("confidence", 0)) < 0.4:
+            try:
+                conf = float(raw.get("confidence", 0))
+            except (TypeError, ValueError):
+                conf = 0.0
+            if conf < 0.4:
                 continue
             drug = str(raw.get("drug") or "").strip()[:255]
             condition = str(raw.get("condition") or "").strip()[:255]

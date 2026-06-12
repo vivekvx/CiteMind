@@ -53,7 +53,7 @@ export async function fetchDocuments(): Promise<DocumentItem[]> {
 
 export async function startAnalysis(
   documentIds: number[],
-): Promise<AnalysisReport> {
+): Promise<{ job_id: string; status: string }> {
   const res = await fetch(`${API_URL}/medical/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -64,6 +64,22 @@ export async function startAnalysis(
     throw new Error(err.detail || "Analysis failed");
   }
   return res.json();
+}
+
+export async function pollAnalysis(
+  jobId: string,
+  pollIntervalMs = 2000,
+  maxAttempts = 300,
+): Promise<AnalysisReport> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const result = await getAnalysis(jobId);
+    if (result.status === "done" && result.report) return result.report;
+    if (result.status === "failed") {
+      throw new Error(result.error || "Analysis failed");
+    }
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
+  }
+  throw new Error("Analysis timed out");
 }
 
 export async function getAnalysis(jobId: string): Promise<{
