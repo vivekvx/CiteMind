@@ -1,36 +1,35 @@
 # CiteMind
 
-> AI research assistant for medical literature — cited answers, contradiction detection, and evidence grading in one tool.
+> **Medical papers contradict each other. CiteMind finds where.**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Upload medical papers, ask questions with inline citations, and automatically surface when studies contradict each other — with GRADE-weighted evidence scoring and LLM-generated explanations.
+A 4,200-patient RCT says atorvastatin cuts cardiovascular mortality by 28%. A cohort of 890 elderly patients says it doesn't help and causes more myopathy. Same drug, same condition, opposite conclusions. CiteMind extracts claims from uploaded studies, grades the evidence on the GRADE hierarchy, flags the contradiction, and explains the population difference driving it.
 
-**[Live Demo](https://citemind-six.vercel.app)** · [Status](https://citemind-six.vercel.app/status) · [API Docs](https://citemind-api.vercel.app/docs)
+**[Live Demo](https://citemind-six.vercel.app)** — runs on built-in sample papers, no backend needed · [API Docs](https://citemind-api.vercel.app/docs)
 
----
+![Contradiction analysis results: 6 claims extracted, 2 contradictions found, claim A vs claim B comparison with GRADE evidence bars](docs/assets/analysis-results.png)
 
-## Screenshots
+<details>
+<summary>More screenshots</summary>
 
-![CiteMind upload, document selection, and cited answer workflow](docs/images/citemind-workflow.png)
+**Landing**
+![CiteMind landing page](docs/assets/landing.png)
 
-![CiteMind retrieved chunks and evaluation score cards](docs/images/citemind-evaluation.png)
+**Document selection**
+![Selecting medical papers to compare](docs/assets/select-documents.png)
+
+**Contradiction detail with explanation**
+![Expanded contradiction card showing claim A vs claim B with LLM explanation and evidence consensus](docs/assets/contradiction-card.png)
+
+</details>
 
 ---
 
 ## What It Does
-
-### Research Assistant
-Upload PDFs, EPUBs, Markdown, or plain text — then ask questions that return cited answers with visible source chunks. Built for auditability: every claim traces back to the document it came from.
-
-- Inline citations with retrieved chunk display
-- Section-title lookups and first-mention retrieval
-- Optional FlashRank reranking for hard context lookups
-- Optional LlamaParse for complex PDF extraction
-- Evaluation cards: faithfulness, relevance, citation coverage
 
 ### MedContradict — Contradiction Detection
 
@@ -50,6 +49,16 @@ Upload papers → Extract claims → Detect contradictions → Grade evidence �
 
 Contradiction types: `DIRECT` · `METHODOLOGICAL` · `PARTIAL` · `TEMPORAL`
 Severity: `HIGH` (RCT or meta-analysis involved) · `MEDIUM` · `LOW`
+
+### Research Assistant
+
+Upload PDFs, EPUBs, Markdown, or plain text — then ask questions that return cited answers with visible source chunks. Built for auditability: every claim traces back to the document it came from.
+
+- Inline citations with retrieved chunk display
+- Section-title lookups and first-mention retrieval
+- Optional FlashRank reranking for hard context lookups
+- Optional LlamaParse for complex PDF extraction
+- Evaluation cards: faithfulness, relevance, citation coverage
 
 ---
 
