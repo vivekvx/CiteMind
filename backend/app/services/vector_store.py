@@ -10,7 +10,7 @@ from backend.app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-VECTOR_SIZE = 1024
+VECTOR_SIZE = 1536  # OpenAI text-embedding-3-small
 _ID_MULTIPLIER = 100_000
 
 
@@ -56,11 +56,29 @@ class QdrantVectorStore:
         settings = get_settings()
         col = settings.qdrant_collection
         existing = {c.name for c in self._client.get_collections().collections}
-        if col not in existing:
-            self._client.create_collection(
-                collection_name=col,
-                vectors_config=qmodels.VectorParams(size=VECTOR_SIZE, distance=qmodels.Distance.COSINE),
+        if col in existing:
+            if self._collection_dim(col) == VECTOR_SIZE:
+                return
+            logger.warning(
+                "Qdrant collection %s has stale vector dim; recreating with dim %d",
+                col,
+                VECTOR_SIZE,
             )
+            self._client.delete_collection(col)
+        self._client.create_collection(
+            collection_name=col,
+            vectors_config=qmodels.VectorParams(size=VECTOR_SIZE, distance=qmodels.Distance.COSINE),
+        )
+
+    def _collection_dim(self, col: str) -> Optional[int]:
+        try:
+            vectors = self._client.get_collection(col).config.params.vectors
+            if isinstance(vectors, qmodels.VectorParams):
+                return vectors.size
+            return None
+        except Exception as exc:
+            logger.warning("Qdrant collection info failed (%s): %s", col, exc)
+            return None
 
     @property
     def records(self) -> list[VectorRecord]:

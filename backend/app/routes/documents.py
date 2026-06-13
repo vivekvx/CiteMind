@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -30,7 +30,6 @@ SAMPLE_DOCUMENT_PATH = Path(__file__).resolve().parents[3] / "sample_docs" / "sa
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db),
     _: None = Depends(enforce_rate_limit),
 ) -> DocumentUploadResponse:
@@ -39,22 +38,7 @@ async def upload_document(
     content = await file.read()
     if len(content) > get_settings().max_upload_bytes:
         raise HTTPException(status_code=413, detail="Uploaded file is too large.")
-    result = _store_document_content(db, title, content)
-    background_tasks.add_task(_run_extraction, result.id)
-    return result
-
-
-def _run_extraction(document_id: int) -> None:
-    from backend.app.db.database import SessionLocal
-    from backend.app.medical.extractor import extract_claims
-    from backend.app.services.llm_client import LLMClient
-    import logging
-    logger = logging.getLogger(__name__)
-    try:
-        with SessionLocal() as session:
-            extract_claims(document_id, session, LLMClient())
-    except Exception as exc:
-        logger.warning("Background extraction failed doc %d: %s", document_id, exc)
+    return _store_document_content(db, title, content)
 
 
 @router.post("/demo/reset", response_model=DocumentUploadResponse)

@@ -54,10 +54,37 @@ export async function fetchDocuments(): Promise<DocumentItem[]> {
   return res.json();
 }
 
+// Serverless: claims are extracted in their own request per document (each
+// gets its own function timeout window) instead of upload-time background
+// tasks, which never run on Vercel. Skips documents that already have claims.
+export async function ensureClaimsExtracted(
+  documentIds: number[],
+): Promise<void> {
+  if (DEMO_MODE) return;
+  for (const id of documentIds) {
+    const claimsRes = await fetch(`${API_URL}/medical/claims/${id}`);
+    if (claimsRes.ok) {
+      const claims: ClaimOut[] = await claimsRes.json();
+      if (claims.length > 0) continue;
+    }
+    const res = await fetch(`${API_URL}/medical/extract/${id}`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "" }));
+      throw new Error(err.detail || `Claim extraction failed for document ${id}`);
+    }
+  }
+}
+
+// The backend runs analysis synchronously and returns the full report.
 export async function startAnalysis(
   documentIds: number[],
-): Promise<{ job_id: string; status: string }> {
-  if (DEMO_MODE) return { job_id: DEMO_REPORT.job_id, status: "done" };
+): Promise<AnalysisReport> {
+  if (DEMO_MODE) {
+    await new Promise((r) => setTimeout(r, 1500));
+    return DEMO_REPORT;
+  }
   const res = await fetch(`${API_URL}/medical/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
