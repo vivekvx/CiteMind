@@ -50,7 +50,8 @@ Controlled by `LLM_PROVIDER` env var (`auto` | `ollama` | `openai` | `openrouter
 
 ## Embeddings
 
-`embeddings.py` uses BGE-M3 via `sentence-transformers`. Model cached in `_model` global.
+`embeddings.py` uses OpenAI `text-embedding-3-small` (1536-dim) via httpx.
+Requires `OPENAI_API_KEY` env var. No torch/sentence-transformers.
 Never use SHA-256 hashing as fake embeddings.
 
 ## Vector Store
