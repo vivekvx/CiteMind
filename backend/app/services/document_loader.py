@@ -70,6 +70,12 @@ def _convert_with_markitdown(content: bytes, filename: str) -> str:
         result = md.convert(tmp_path)
         text = result.text_content or ""
     except Exception as exc:
+        exc_str = str(exc)
+        if "MissingDependencyException" in exc_str or "dependency" in exc_str.lower():
+            raise HTTPException(
+                status_code=400,
+                detail=f"MarkItDown is missing optional dependencies to process {suffix} files. Run: pip install 'markitdown[all]'",
+            ) from exc
         raise HTTPException(
             status_code=400,
             detail=f"MarkItDown could not process this {suffix} file.",

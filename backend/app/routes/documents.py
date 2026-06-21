@@ -28,14 +28,15 @@ SAMPLE_DOCUMENT_PATH = Path(__file__).resolve().parents[3] / "sample_docs" / "sa
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
-async def upload_document(
+def upload_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     _: None = Depends(enforce_rate_limit),
 ) -> DocumentUploadResponse:
     require_production_database()
     title = file.filename or "Untitled document"
-    content = await file.read()
+    content = file.file.read()
     if len(content) > get_settings().max_upload_bytes:
         raise HTTPException(status_code=413, detail="Uploaded file is too large.")
     return _store_document_content(db, title, content)

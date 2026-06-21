@@ -83,10 +83,11 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db() -> None:
     from backend.app.models import Base
+    import threading
 
     Base.metadata.create_all(bind=engine)
     _ensure_local_schema()
-    hydrate_vector_store()
+    threading.Thread(target=hydrate_vector_store, daemon=True).start()
 
 
 def _ensure_local_schema() -> None:

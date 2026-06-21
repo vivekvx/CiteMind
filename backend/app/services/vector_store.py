@@ -50,7 +50,11 @@ class QdrantVectorStore:
             settings = get_settings()
             qdrant_url = settings.qdrant_url
             if qdrant_url and qdrant_url != "http://localhost:6333":
-                self._client = QdrantClient(url=qdrant_url)
+                try:
+                    self._client = QdrantClient(url=qdrant_url, timeout=2.0)
+                except Exception as exc:
+                    logger.warning("Qdrant connection failed at %s. Falling back to in-memory Qdrant: %s", qdrant_url, exc)
+                    self._client = QdrantClient(location=":memory:")
             else:
                 self._client = QdrantClient(location=":memory:")
             self._ensure_collection()
@@ -198,14 +202,14 @@ class QdrantVectorStore:
                         match=qmodels.MatchAny(any=document_ids),
                     )]
                 )
-            results = client.search(
+            results = client.query_points(
                 collection_name=col,
-                query_vector=embedding,
+                query=embedding,
                 query_filter=query_filter,
                 limit=top_k,
                 with_vectors=True,
             )
-            return [_to_record(r) for r in results]
+            return [_to_record(r) for r in results.points]
         except Exception as exc:
             logger.warning("Qdrant search failed: %s", exc)
             return []

@@ -630,6 +630,28 @@ class CiteMindRegressionTests(unittest.TestCase):
         self.assertIn("# Main Heading", text)
         self.assertIn("Parsed table content", text)
 
+    def test_markitdown_parser_flows_into_document_loader(self) -> None:
+        import fitz
+        if document_loader.MarkItDown is None:
+            self.skipTest("MarkItDown is not installed.")
+
+        settings = get_settings()
+        settings.document_parser = "markitdown"
+
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((50, 50), "Hello CiteMind!")
+        pdf_bytes = doc.write()
+        doc.close()
+
+        try:
+            text = load_document_content(pdf_bytes, "paper.pdf")
+            self.assertIn("Hello CiteMind!", text)
+        except HTTPException as error:
+            if "MissingDependencyException" in error.detail or "dependencies" in error.detail:
+                self.skipTest("MarkItDown is missing optional PDF dependencies.")
+            raise
+
     def test_summary_query_preserves_word_limit_and_uses_smaller_context(self) -> None:
         content = (
             b"Transformer models use attention layers for language modeling. "
