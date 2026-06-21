@@ -10,7 +10,7 @@ from backend.app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-VECTOR_SIZE = 1536  # OpenAI text-embedding-3-small
+VECTOR_SIZE = 768  # Jina embeddings v2 base
 _ID_MULTIPLIER = 100_000
 
 
@@ -48,7 +48,11 @@ class QdrantVectorStore:
     def _get_client(self) -> QdrantClient:
         if self._client is None:
             settings = get_settings()
-            self._client = QdrantClient(url=settings.qdrant_url)
+            qdrant_url = settings.qdrant_url
+            if qdrant_url and qdrant_url != "http://localhost:6333":
+                self._client = QdrantClient(url=qdrant_url)
+            else:
+                self._client = QdrantClient(location=":memory:")
             self._ensure_collection()
         return self._client
 

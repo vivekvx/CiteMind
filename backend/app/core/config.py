@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     openrouter_api_key: Optional[str] = None
     groq_api_key: Optional[str] = None
     groq_chat_model: str = "llama-3.1-8b-instant"
+    jina_api_key: Optional[str] = None
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
     llm_provider: str = "auto"
