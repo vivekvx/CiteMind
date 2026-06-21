@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     openai_chat_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"
     openrouter_api_key: Optional[str] = None
+    groq_api_key: Optional[str] = None
+    groq_chat_model: str = "llama-3.1-8b-instant"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
     llm_provider: str = "auto"

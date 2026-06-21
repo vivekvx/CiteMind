@@ -13,23 +13,24 @@ TIMEOUT = 120.0
 
 
 class LLMClient:
-    """Provider chain: Ollama → OpenAI → OpenRouter."""
+    """Provider chain: Ollama → Groq → OpenAI → OpenRouter."""
 
     def complete(self, prompt: str, system: str = "", json_mode: bool = False) -> str:
         settings = get_settings()
         provider = settings.llm_provider
 
         if provider == "auto":
-            for fn in (self._try_ollama, self._try_openai, self._try_openrouter):
+            for fn in (self._try_ollama, self._try_groq, self._try_openai, self._try_openrouter):
                 result = fn(prompt, system, json_mode, settings)
                 if result is not None:
                     return result
             raise RuntimeError(
-                "No LLM available. Start Ollama or set OPENAI_API_KEY / OPENROUTER_API_KEY."
+                "No LLM available. Start Ollama or set GROQ_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY."
             )
 
         fn_map = {
             "ollama": self._try_ollama,
+            "groq": self._try_groq,
             "openai": self._try_openai,
             "openrouter": self._try_openrouter,
         }
@@ -57,6 +58,18 @@ class LLMClient:
         except Exception as exc:
             logger.debug("Ollama unavailable: %s", exc)
             return None
+
+    def _try_groq(self, prompt: str, system: str, json_mode: bool, settings) -> Optional[str]:
+        if not settings.groq_api_key:
+            return None
+        return self._openai_compat(
+            url="https://api.groq.com/openai/v1/chat/completions",
+            api_key=settings.groq_api_key,
+            model=settings.groq_chat_model,
+            prompt=prompt,
+            system=system,
+            json_mode=json_mode,
+        )
 
     def _try_openai(self, prompt: str, system: str, json_mode: bool, settings) -> Optional[str]:
         if not settings.openai_api_key:
